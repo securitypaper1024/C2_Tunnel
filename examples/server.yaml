@@ -1,0 +1,44 @@
+# SecureTunnel Server 配置文件示例
+# 使用方法: tunnel -config server.yaml
+
+mode: server
+
+server:
+  # 监听地址
+  listen: "0.0.0.0:8888"
+  
+  # 目标地址 (CobaltStrike TeamServer)
+  target: "127.0.0.1:50050"
+  
+  # 加密密码
+  password: "YourSecurePassword@2024"
+  
+  # WebSocket 配置
+  enable_ws: false
+  ws_path: "/ws"
+  ws_tls: false
+  ws_cert: ""
+  ws_key: ""
+  
+  # 访问控制列表 (ACL)
+  acl:
+    # 是否启用 ACL
+    enable: true
+    
+    # 模式: whitelist (白名单) 或 blacklist (黑名单)
+    # whitelist: 只允许名单内的 IP 连接
+    # blacklist: 拒绝名单内的 IP 连接
+    mode: "whitelist"
+    
+    # 白名单 (支持单个 IP 和 CIDR 格式)
+    whitelist:
+      - "192.168.1.0/24"    # 允许整个 192.168.1.x 网段
+      - "10.0.0.0/8"        # 允许整个 10.x.x.x 网段
+      - "127.0.0.1"         # 允许本地
+      - "1.2.3.4"           # 允许特定 IP
+    
+    # 黑名单 (当 mode 为 blacklist 时生效)
+    blacklist:
+      - "192.168.1.100"     # 拒绝特定 IP
+      - "10.10.0.0/16"      # 拒绝特定网段
+

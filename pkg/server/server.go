@@ -5,10 +5,12 @@ import (
 	"io"
 	"log"
 	"net"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
 
+	"tunnel/pkg/acl"
 	"tunnel/pkg/crypto"
 	"tunnel/pkg/transport"
 )
@@ -20,10 +22,13 @@ type Config struct {
 	Password     string // 加密密码
 	ReadTimeout  time.Duration
 	WriteTimeout time.Duration
-	
+
 	// WebSocket 配置
-	EnableWS     bool               // 是否启用 WebSocket
-	WSConfig     transport.WSConfig // WebSocket 配置
+	EnableWS bool               // 是否启用 WebSocket
+	WSConfig transport.WSConfig // WebSocket 配置
+
+	// ACL 配置
+	ACLConfig acl.Config // 访问控制配置
 }
 
 // Server 隧道服务端
@@ -31,6 +36,7 @@ type Server struct {
 	config Config
 	cipher *crypto.AESCipher
 	ln     net.Listener
+	acl    *acl.ACL
 }
 
 // New 创建新的 Server
@@ -40,9 +46,16 @@ func New(config Config) (*Server, error) {
 		return nil, fmt.Errorf("failed to create cipher: %w", err)
 	}
 
+	// 创建 ACL
+	accessControl, err := acl.New(config.ACLConfig)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create ACL: %w", err)
+	}
+
 	return &Server{
 		config: config,
 		cipher: cipher,
+		acl:    accessControl,
 	}, nil
 }
 
@@ -59,8 +72,32 @@ func (s *Server) startWebSocket() error {
 	log.Printf("[Server] 🌐 WebSocket 模式启动中...")
 	log.Printf("[Server] 🎯 目标地址: %s", s.config.TargetAddr)
 
+	// 创建带 ACL 的 WebSocket 服务器
 	wsServer := transport.NewWSServer(s.config.WSConfig, s.cipher, s.handleWSConnection)
-	return wsServer.Start(s.config.ListenAddr)
+
+	// 包装 handler 添加 ACL 检查
+	originalHandler := wsServer
+	wrappedHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		clientIP := getClientIP(r)
+		if !s.acl.IsAllowed(clientIP) {
+			http.Error(w, "Forbidden", http.StatusForbidden)
+			return
+		}
+		originalHandler.ServeHTTP(w, r)
+	})
+
+	server := &http.Server{
+		Addr:    s.config.ListenAddr,
+		Handler: wrappedHandler,
+	}
+
+	if s.config.WSConfig.EnableTLS {
+		log.Printf("[Server] 🔒 启用 TLS，监听地址: %s%s", s.config.ListenAddr, s.config.WSConfig.Path)
+		return server.ListenAndServeTLS(s.config.WSConfig.TLSCert, s.config.WSConfig.TLSKey)
+	}
+
+	log.Printf("[Server] 🚀 启动成功，监听地址: ws://%s%s", s.config.ListenAddr, s.config.WSConfig.Path)
+	return server.ListenAndServe()
 }
 
 // handleWSConnection 处理 WebSocket 连接
@@ -124,6 +161,12 @@ func (s *Server) startTCP() error {
 				return nil
 			}
 			log.Printf("[Server] ⚠️ Accept 错误: %v", err)
+			continue
+		}
+
+		// ACL 检查
+		if !s.acl.IsAllowed(conn.RemoteAddr().String()) {
+			conn.Close()
 			continue
 		}
 
@@ -236,4 +279,32 @@ func (s *Server) forwardToClient(src net.Conn, dst *crypto.CryptoConn) {
 			return
 		}
 	}
+}
+
+// GetACL 获取 ACL 实例
+func (s *Server) GetACL() *acl.ACL {
+	return s.acl
+}
+
+// getClientIP 从 HTTP 请求中获取客户端 IP
+func getClientIP(r *http.Request) string {
+	// 检查 X-Forwarded-For
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		ips := strings.Split(xff, ",")
+		if len(ips) > 0 {
+			return strings.TrimSpace(ips[0])
+		}
+	}
+
+	// 检查 X-Real-IP
+	if xri := r.Header.Get("X-Real-IP"); xri != "" {
+		return xri
+	}
+
+	// 使用 RemoteAddr
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return host
 }

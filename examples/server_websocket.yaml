@@ -1,0 +1,30 @@
+# SecureTunnel Server WebSocket 模式配置示例
+# 使用方法: tunnel -config server_websocket.yaml
+
+mode: server
+
+server:
+  # 监听地址
+  listen: "0.0.0.0:443"
+  
+  # 目标地址 (CobaltStrike TeamServer)
+  target: "127.0.0.1:50050"
+  
+  # 加密密码
+  password: "YourSecurePassword@2024"
+  
+  # WebSocket 配置
+  enable_ws: true
+  ws_path: "/api/v1/stream"  # 伪装成 API 路径
+  ws_tls: true
+  ws_cert: "/path/to/cert.pem"
+  ws_key: "/path/to/key.pem"
+  
+  # 访问控制列表
+  acl:
+    enable: true
+    mode: "whitelist"
+    whitelist:
+      - "0.0.0.0/0"  # 允许所有 (不建议，仅用于测试)
+    blacklist: []
+
