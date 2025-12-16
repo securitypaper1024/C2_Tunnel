@@ -23,11 +23,11 @@ type ServerConfig struct {
 	Password string `json:"password" yaml:"password"` // 加密密码
 
 	// WebSocket 配置
-	EnableWS     bool   `json:"enable_ws" yaml:"enable_ws"`
-	WSPath       string `json:"ws_path" yaml:"ws_path"`
-	WSTLS        bool   `json:"ws_tls" yaml:"ws_tls"`
-	WSCert       string `json:"ws_cert" yaml:"ws_cert"`
-	WSKey        string `json:"ws_key" yaml:"ws_key"`
+	EnableWS bool   `json:"enable_ws" yaml:"enable_ws"`
+	WSPath   string `json:"ws_path" yaml:"ws_path"`
+	WSTLS    bool   `json:"ws_tls" yaml:"ws_tls"`
+	WSCert   string `json:"ws_cert" yaml:"ws_cert"`
+	WSKey    string `json:"ws_key" yaml:"ws_key"`
 
 	// 访问控制
 	ACL ACLConfig `json:"acl" yaml:"acl"`
@@ -182,6 +182,49 @@ func GenerateExampleConfig() *Config {
 	}
 }
 
+// GenerateServerExampleConfig 生成 Server 示例配置
+func GenerateServerExampleConfig() *Config {
+	return &Config{
+		Mode: "server",
+		Server: ServerConfig{
+			Listen:   "0.0.0.0:8888",
+			Target:   "127.0.0.1:50050",
+			Password: "YourSecurePassword@2024",
+			EnableWS: false,
+			WSPath:   "/ws",
+			WSTLS:    false,
+			ACL: ACLConfig{
+				Enable: true,
+				Mode:   "whitelist",
+				Whitelist: []string{
+					"192.168.1.0/24",
+					"10.0.0.0/8",
+					"127.0.0.1",
+				},
+				Blacklist: []string{
+					"192.168.1.100",
+				},
+			},
+		},
+	}
+}
+
+// GenerateClientExampleConfig 生成 Client 示例配置
+func GenerateClientExampleConfig() *Config {
+	return &Config{
+		Mode: "client",
+		Client: ClientConfig{
+			Listen:       "127.0.0.1:443",
+			Server:       "vps.example.com:8888",
+			Password:     "YourSecurePassword@2024",
+			EnableHTTPS:  false,
+			EnableWS:     false,
+			WSPath:       "/ws",
+			WSSkipVerify: false,
+		},
+	}
+}
+
 // SaveConfig 保存配置到文件
 func SaveConfig(config *Config, path string) error {
 	ext := filepath.Ext(path)
@@ -201,4 +244,3 @@ func SaveConfig(config *Config, path string) error {
 
 	return os.WriteFile(path, data, 0600)
 }
-

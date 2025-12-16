@@ -37,11 +37,23 @@
 ### 编译
 
 ```bash
-# 编译当前平台
-go build -ldflags="-s -w" -o tunnel.exe ./cmd/tunnel
+# 编译 Server
+go build -ldflags="-s -w" -o tunnel-server.exe ./cmd/server
 
-# 交叉编译 Linux
-GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o tunnel_linux ./cmd/tunnel
+# 编译 Client
+go build -ldflags="-s -w" -o tunnel-client.exe ./cmd/client
+
+# 交叉编译 Linux Server
+GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o tunnel-server_linux ./cmd/server
+
+# 交叉编译 Linux Client
+GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o tunnel-client_linux ./cmd/client
+
+# 使用构建脚本一键编译所有平台
+# Windows:
+build.bat
+# Linux/macOS:
+./build.sh
 ```
 
 ---
@@ -51,24 +63,29 @@ GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o tunnel_linux ./cmd/tunnel
 ### 生成示例配置文件
 
 ```bash
-# 生成 YAML 格式
-tunnel -gen-config config.yaml
+# Server 端生成配置
+tunnel-server -gen-config server.yaml
 
-# 生成 JSON 格式
-tunnel -gen-config config.json
+# Client 端生成配置
+tunnel-client -gen-config client.yaml
 ```
 
 ### 使用配置文件启动
 
 ```bash
-# 普通启动
-tunnel -config config.yaml
+# Server 普通启动
+tunnel-server -config server.yaml
+
+# Client 普通启动
+tunnel-client -config client.yaml
 
 # 启动后删除配置文件
-tunnel -config config.yaml -delete-config
+tunnel-server -config server.yaml -delete-config
+tunnel-client -config client.yaml -delete-config
 
 # 安全删除配置文件 (覆写后删除，防止数据恢复)
-tunnel -config config.yaml -secure-delete
+tunnel-server -config server.yaml -secure-delete
+tunnel-client -config client.yaml -secure-delete
 ```
 
 ### 配置文件示例
@@ -123,7 +140,7 @@ Server 端支持基于 IP 的访问控制：
 只允许名单内的 IP 连接：
 
 ```bash
-tunnel -mode server -listen 0.0.0.0:8888 -target 127.0.0.1:50050 -password mypass \
+tunnel-server -listen 0.0.0.0:8888 -target 127.0.0.1:50050 -password mypass \
   -acl -acl-mode whitelist -acl-whitelist "192.168.1.0/24,10.0.0.1,127.0.0.1"
 ```
 
@@ -132,7 +149,7 @@ tunnel -mode server -listen 0.0.0.0:8888 -target 127.0.0.1:50050 -password mypas
 拒绝名单内的 IP 连接：
 
 ```bash
-tunnel -mode server -listen 0.0.0.0:8888 -target 127.0.0.1:50050 -password mypass \
+tunnel-server -listen 0.0.0.0:8888 -target 127.0.0.1:50050 -password mypass \
   -acl -acl-mode blacklist -acl-blacklist "192.168.1.100,10.10.0.0/16"
 ```
 
@@ -149,13 +166,13 @@ tunnel -mode server -listen 0.0.0.0:8888 -target 127.0.0.1:50050 -password mypas
 ### Server 端
 
 ```bash
-./tunnel -mode server -listen 0.0.0.0:8888 -target 127.0.0.1:50050 -password "YourPass"
+./tunnel-server -listen 0.0.0.0:8888 -target 127.0.0.1:50050 -password "YourPass"
 ```
 
 ### Client 端
 
 ```bash
-./tunnel -mode client -listen 127.0.0.1:443 -server vps.example.com:8888 -password "YourPass"
+./tunnel-client -listen 127.0.0.1:443 -server vps.example.com:8888 -password "YourPass"
 ```
 
 ---
@@ -166,11 +183,11 @@ tunnel -mode server -listen 0.0.0.0:8888 -target 127.0.0.1:50050 -password mypas
 
 ```bash
 # 基础 WebSocket
-./tunnel -mode server -listen 0.0.0.0:80 -target 127.0.0.1:50050 -password "YourPass" \
+./tunnel-server -listen 0.0.0.0:80 -target 127.0.0.1:50050 -password "YourPass" \
   -ws -ws-path /api/stream
 
 # WebSocket + TLS
-./tunnel -mode server -listen 0.0.0.0:443 -target 127.0.0.1:50050 -password "YourPass" \
+./tunnel-server -listen 0.0.0.0:443 -target 127.0.0.1:50050 -password "YourPass" \
   -ws -ws-tls -ws-cert cert.pem -ws-key key.pem
 ```
 
@@ -178,11 +195,11 @@ tunnel -mode server -listen 0.0.0.0:8888 -target 127.0.0.1:50050 -password mypas
 
 ```bash
 # 基础 WebSocket
-./tunnel -mode client -listen 127.0.0.1:443 -server vps.com:80 -password "YourPass" \
+./tunnel-client -listen 127.0.0.1:443 -server vps.com:80 -password "YourPass" \
   -ws -ws-path /api/stream
 
 # WebSocket + TLS
-./tunnel -mode client -listen 127.0.0.1:443 -server vps.com:443 -password "YourPass" \
+./tunnel-client -listen 127.0.0.1:443 -server vps.com:443 -password "YourPass" \
   -ws -ws-tls -ws-skip-verify
 ```
 
@@ -190,14 +207,21 @@ tunnel -mode server -listen 0.0.0.0:8888 -target 127.0.0.1:50050 -password mypas
 
 ## 📖 完整参数列表
 
-### 基础参数
+### Server 参数 (tunnel-server)
 
 | 参数 | 说明 | 默认值 |
 |------|------|--------|
-| `-mode` | 运行模式 (server/client) | - |
 | `-listen` | 监听地址 | - |
-| `-target` | 目标地址 | - |
-| `-server` | Server 地址 (Client) | - |
+| `-target` | 目标地址 (如 TeamServer) | - |
+| `-password` | 加密密码 | SecureTunnel@2024 |
+
+### Client 参数 (tunnel-client)
+
+| 参数 | 说明 | 默认值 |
+|------|------|--------|
+| `-listen` | 本地监听地址 | - |
+| `-server` | Server 端地址 | - |
+| `-target` | 目标地址 (可选) | - |
 | `-password` | 加密密码 | SecureTunnel@2024 |
 | `-https` | HTTPS CONNECT 代理 | false |
 
@@ -236,7 +260,9 @@ tunnel -mode server -listen 0.0.0.0:8888 -target 127.0.0.1:50050 -password mypas
 
 ```
 Tunnel/
-├── cmd/tunnel/main.go           # 主程序入口
+├── cmd/
+│   ├── server/main.go           # Server 端入口
+│   └── client/main.go           # Client 端入口
 ├── pkg/
 │   ├── acl/acl.go               # IP 黑白名单模块
 │   ├── config/config.go         # 配置文件模块
@@ -244,6 +270,9 @@ Tunnel/
 │   ├── client/client.go         # Client 端实现
 │   ├── server/server.go         # Server 端实现
 │   └── transport/websocket.go   # WebSocket 传输模块
+├── build/                        # 编译输出目录
+│   ├── tunnel-server_*          # Server 可执行文件
+│   └── tunnel-client_*          # Client 可执行文件
 ├── examples/                     # 配置文件示例
 │   ├── server.yaml
 │   ├── client.yaml
@@ -251,6 +280,8 @@ Tunnel/
 │   └── config.json
 ├── docs/
 │   └── 公众号文章.md
+├── build.bat                     # Windows 构建脚本
+├── build.sh                      # Linux/macOS 构建脚本
 ├── go.mod
 └── README.md
 ```
