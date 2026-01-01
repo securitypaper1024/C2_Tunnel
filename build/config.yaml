@@ -1,0 +1,29 @@
+mode: client
+server:
+    listen: 0.0.0.0:8888
+    target: 127.0.0.1:50050
+    password: YourSecurePassword@2024
+    enable_ws: false
+    ws_path: /ws
+    ws_tls: false
+    ws_cert: ""
+    ws_key: ""
+    acl:
+        enable: true
+        mode: whitelist
+        whitelist:
+            - 192.168.1.0/24
+            - 10.0.0.0/8
+            - 127.0.0.1
+        blacklist:
+            - 192.168.1.100
+client:
+    listen: 127.0.0.1:9999
+    server: 192.168.92.131:8888
+    target: ""
+    password: YourSecurePassword@2024
+    enable_https: false
+    enable_ws: false
+    ws_path: /ws
+    ws_tls: true
+    ws_skip_verify: false

@@ -9,56 +9,47 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Config 完整配置结构
 type Config struct {
-	Mode   string       `json:"mode" yaml:"mode"`     // server 或 client
-	Server ServerConfig `json:"server" yaml:"server"` // Server 配置
-	Client ClientConfig `json:"client" yaml:"client"` // Client 配置
+	Mode   string       `json:"mode" yaml:"mode"`
+	Server ServerConfig `json:"server" yaml:"server"`
+	Client ClientConfig `json:"client" yaml:"client"`
 }
 
-// ServerConfig Server 端配置
 type ServerConfig struct {
-	Listen   string `json:"listen" yaml:"listen"`     // 监听地址
-	Target   string `json:"target" yaml:"target"`     // 目标地址
-	Password string `json:"password" yaml:"password"` // 加密密码
+	Listen   string `json:"listen" yaml:"listen"`
+	Target   string `json:"target" yaml:"target"`
+	Password string `json:"password" yaml:"password"`
 
-	// WebSocket 配置
 	EnableWS bool   `json:"enable_ws" yaml:"enable_ws"`
 	WSPath   string `json:"ws_path" yaml:"ws_path"`
 	WSTLS    bool   `json:"ws_tls" yaml:"ws_tls"`
 	WSCert   string `json:"ws_cert" yaml:"ws_cert"`
 	WSKey    string `json:"ws_key" yaml:"ws_key"`
 
-	// 访问控制
 	ACL ACLConfig `json:"acl" yaml:"acl"`
 }
 
-// ClientConfig Client 端配置
 type ClientConfig struct {
-	Listen   string `json:"listen" yaml:"listen"`     // 本地监听地址
-	Server   string `json:"server" yaml:"server"`     // Server 端地址
-	Target   string `json:"target" yaml:"target"`     // 目标地址 (可选)
-	Password string `json:"password" yaml:"password"` // 加密密码
+	Listen   string `json:"listen" yaml:"listen"`
+	Server   string `json:"server" yaml:"server"`
+	Target   string `json:"target" yaml:"target"`
+	Password string `json:"password" yaml:"password"`
 
-	// HTTPS 代理模式
 	EnableHTTPS bool `json:"enable_https" yaml:"enable_https"`
 
-	// WebSocket 配置
 	EnableWS     bool   `json:"enable_ws" yaml:"enable_ws"`
 	WSPath       string `json:"ws_path" yaml:"ws_path"`
 	WSTLS        bool   `json:"ws_tls" yaml:"ws_tls"`
 	WSSkipVerify bool   `json:"ws_skip_verify" yaml:"ws_skip_verify"`
 }
 
-// ACLConfig 访问控制配置
 type ACLConfig struct {
-	Enable    bool     `json:"enable" yaml:"enable"`       // 是否启用 ACL
-	Mode      string   `json:"mode" yaml:"mode"`           // whitelist 或 blacklist
-	Whitelist []string `json:"whitelist" yaml:"whitelist"` // 白名单 IP/CIDR
-	Blacklist []string `json:"blacklist" yaml:"blacklist"` // 黑名单 IP/CIDR
+	Enable    bool     `json:"enable" yaml:"enable"`
+	Mode      string   `json:"mode" yaml:"mode"`
+	Whitelist []string `json:"whitelist" yaml:"whitelist"`
+	Blacklist []string `json:"blacklist" yaml:"blacklist"`
 }
 
-// LoadConfig 从文件加载配置
 func LoadConfig(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -78,7 +69,6 @@ func LoadConfig(path string) (*Config, error) {
 			return nil, fmt.Errorf("failed to parse YAML config: %w", err)
 		}
 	default:
-		// 尝试 JSON，失败则尝试 YAML
 		if err := json.Unmarshal(data, config); err != nil {
 			if err := yaml.Unmarshal(data, config); err != nil {
 				return nil, fmt.Errorf("failed to parse config (tried JSON and YAML): %w", err)
@@ -89,7 +79,6 @@ func LoadConfig(path string) (*Config, error) {
 	return config, nil
 }
 
-// DeleteConfigFile 删除配置文件
 func DeleteConfigFile(path string) error {
 	if err := os.Remove(path); err != nil {
 		return fmt.Errorf("failed to delete config file: %w", err)
@@ -97,21 +86,17 @@ func DeleteConfigFile(path string) error {
 	return nil
 }
 
-// SecureDeleteConfigFile 安全删除配置文件 (覆写后删除)
 func SecureDeleteConfigFile(path string) error {
-	// 获取文件大小
 	info, err := os.Stat(path)
 	if err != nil {
 		return fmt.Errorf("failed to stat config file: %w", err)
 	}
 
-	// 打开文件进行覆写
 	file, err := os.OpenFile(path, os.O_WRONLY, 0)
 	if err != nil {
 		return fmt.Errorf("failed to open config file for overwrite: %w", err)
 	}
 
-	// 用随机数据覆写
 	zeros := make([]byte, info.Size())
 	for i := range zeros {
 		zeros[i] = 0x00
@@ -120,11 +105,9 @@ func SecureDeleteConfigFile(path string) error {
 	file.Sync()
 	file.Close()
 
-	// 删除文件
 	return os.Remove(path)
 }
 
-// DefaultServerConfig 默认 Server 配置
 func DefaultServerConfig() ServerConfig {
 	return ServerConfig{
 		Listen:   "0.0.0.0:8888",
@@ -138,7 +121,6 @@ func DefaultServerConfig() ServerConfig {
 	}
 }
 
-// DefaultClientConfig 默认 Client 配置
 func DefaultClientConfig() ClientConfig {
 	return ClientConfig{
 		Listen:   "127.0.0.1:443",
@@ -147,7 +129,6 @@ func DefaultClientConfig() ClientConfig {
 	}
 }
 
-// GenerateExampleConfig 生成示例配置
 func GenerateExampleConfig() *Config {
 	return &Config{
 		Mode: "server",
@@ -182,7 +163,6 @@ func GenerateExampleConfig() *Config {
 	}
 }
 
-// GenerateServerExampleConfig 生成 Server 示例配置
 func GenerateServerExampleConfig() *Config {
 	return &Config{
 		Mode: "server",
@@ -209,7 +189,6 @@ func GenerateServerExampleConfig() *Config {
 	}
 }
 
-// GenerateClientExampleConfig 生成 Client 示例配置
 func GenerateClientExampleConfig() *Config {
 	return &Config{
 		Mode: "client",
@@ -225,7 +204,6 @@ func GenerateClientExampleConfig() *Config {
 	}
 }
 
-// SaveConfig 保存配置到文件
 func SaveConfig(config *Config, path string) error {
 	ext := filepath.Ext(path)
 	var data []byte

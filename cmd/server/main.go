@@ -30,25 +30,21 @@ const banner = `
 `
 
 func main() {
-	// 命令行参数
 	listen := flag.String("listen", "", "监听地址 (例: 0.0.0.0:8888)")
 	target := flag.String("target", "", "目标地址 (例: 127.0.0.1:50050)")
 	password := flag.String("password", "SecureTunnel@2024", "加密密码")
 
-	// WebSocket 参数
 	enableWS := flag.Bool("ws", false, "启用 WebSocket 传输模式")
 	wsPath := flag.String("ws-path", "/ws", "WebSocket 路径")
 	wsTLS := flag.Bool("ws-tls", false, "启用 WebSocket TLS (wss://)")
 	wsCert := flag.String("ws-cert", "", "TLS 证书文件路径")
 	wsKey := flag.String("ws-key", "", "TLS 密钥文件路径")
 
-	// 配置文件参数
 	configFile := flag.String("config", "", "配置文件路径 (JSON/YAML)")
 	deleteConfig := flag.Bool("delete-config", false, "启动后删除配置文件")
 	secureDelete := flag.Bool("secure-delete", false, "安全删除配置文件 (覆写后删除)")
 	genConfig := flag.String("gen-config", "", "生成示例配置文件")
 
-	// ACL 参数
 	aclEnable := flag.Bool("acl", false, "启用访问控制")
 	aclMode := flag.String("acl-mode", "whitelist", "ACL 模式: whitelist 或 blacklist")
 	aclWhitelist := flag.String("acl-whitelist", "", "白名单 (逗号分隔，支持 CIDR)")
@@ -105,26 +101,22 @@ func main() {
 
 	fmt.Println(banner)
 
-	// 生成示例配置文件
 	if *genConfig != "" {
 		generateServerExampleConfig(*genConfig)
 		return
 	}
 
-	// 从配置文件加载
 	if *configFile != "" {
 		runFromConfig(*configFile, *deleteConfig, *secureDelete)
 		return
 	}
 
-	// 构建 WebSocket 配置
 	wsConfig := transport.DefaultWSConfig()
 	wsConfig.Path = *wsPath
 	wsConfig.EnableTLS = *wsTLS
 	wsConfig.TLSCert = *wsCert
 	wsConfig.TLSKey = *wsKey
 
-	// 构建 ACL 配置
 	aclConfig := acl.Config{
 		Enable: *aclEnable,
 		Mode:   *aclMode,
@@ -139,7 +131,6 @@ func main() {
 	runServer(*listen, *target, *password, *enableWS, wsConfig, aclConfig)
 }
 
-// generateServerExampleConfig 生成 Server 示例配置文件
 func generateServerExampleConfig(path string) {
 	cfg := config.GenerateServerExampleConfig()
 	if err := config.SaveConfig(cfg, path); err != nil {
@@ -148,7 +139,6 @@ func generateServerExampleConfig(path string) {
 	log.Printf("✅ 示例配置文件已生成: %s", path)
 }
 
-// runFromConfig 从配置文件启动
 func runFromConfig(configPath string, deleteConf, secureDelete bool) {
 	log.Printf("[Config] 📄 加载配置文件: %s", configPath)
 
@@ -157,12 +147,10 @@ func runFromConfig(configPath string, deleteConf, secureDelete bool) {
 		log.Fatalf("❌ 加载配置文件失败: %v", err)
 	}
 
-	// 检查模式
 	if cfg.Mode != "" && cfg.Mode != "server" {
 		log.Fatalf("❌ 配置文件中的 mode 不是 server，请使用 tunnel-client")
 	}
 
-	// 删除配置文件
 	if deleteConf || secureDelete {
 		if secureDelete {
 			log.Printf("[Config] 🔒 安全删除配置文件...")
@@ -222,7 +210,6 @@ func runServer(listen, target, password string, enableWS bool, wsConfig transpor
 		log.Fatalf("❌ 创建 Server 失败: %v", err)
 	}
 
-	// 优雅关闭
 	go func() {
 		sigChan := make(chan os.Signal, 1)
 		signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
@@ -237,7 +224,6 @@ func runServer(listen, target, password string, enableWS bool, wsConfig transpor
 	}
 }
 
-// splitAndTrim 分割并去除空格
 func splitAndTrim(s string) []string {
 	if s == "" {
 		return nil
@@ -276,4 +262,3 @@ func trimSpace(s string) string {
 	}
 	return s[start:end]
 }
-
