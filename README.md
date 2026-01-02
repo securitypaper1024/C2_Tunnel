@@ -100,7 +100,7 @@ GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o tunnel-client_linux ./cmd/c
 监听地址: 127.0.0.1:9999
 ```
 
-![CobaltStrike 监听器配置](docs/assets/image-20251215211155837.png)
+![CobaltStrike 监听器配置](assets/1767285474653-69c7cf03-f4d7-4117-8d95-ea2dafd2fc0d.png)
 
 #### 2. Client 端配置
 
@@ -110,7 +110,7 @@ GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o tunnel-client_linux ./cmd/c
 ./tunnel-client -listen 127.0.0.1:443 -server vps.example.com:8888 -password "YourPass" -ws
 ```
 
-![Client 端配置](docs/assets/image-20251215211343134.png)
+![Client 端配置](assets/1767286555726-9131b1b4-049e-4ab3-812e-7ab3e2b7a3be.png)
 
 #### 3. Server 端配置
 
@@ -120,17 +120,17 @@ GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o tunnel-client_linux ./cmd/c
 ./tunnel-server -listen 0.0.0.0:8888 -target 127.0.0.1:50050 -password "YourPass" -ws
 ```
 
-![Server 端配置](docs/assets/image-20251215211401884.png)
+![Server 端配置](assets/1767286581044-5feb318f-2e55-4b31-a069-0af68516bcee.png)
 
 #### 4. 流量分析
 
 **网络流量侧：** 所有流量均为 WebSocket 协议，与 CobaltStrike 原始流量完全无关，有效规避流量检测。
 
-![WebSocket 流量](docs/assets/image-20251215211604703.png)
+![WebSocket 流量](assets/1767286789232-487ab9fd-4b2e-42de-a5c1-ad6ee077018c.png)
 
 **CobaltStrike 侧：** 功能一切正常，Beacon 正常上线，所有功能均可正常使用。
 
-![CobaltStrike 功能正常](docs/assets/image-20251215211752268.png)
+![CobaltStrike 功能正常](assets/1767286680631-8710496f-4bc7-4859-be59-5a5ac5a7a5f0.png)
 
 ---
 
