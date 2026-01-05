@@ -3,7 +3,6 @@ package server
 import (
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"net/http"
 	"strings"
@@ -12,6 +11,7 @@ import (
 
 	"tunnel/pkg/acl"
 	"tunnel/pkg/crypto"
+	"tunnel/pkg/logger"
 	"tunnel/pkg/transport"
 )
 
@@ -61,8 +61,8 @@ func (s *Server) Start() error {
 }
 
 func (s *Server) startWebSocket() error {
-	log.Printf("[Server] 🌐 WebSocket 模式启动中...")
-	log.Printf("[Server] 🎯 目标地址: %s", s.config.TargetAddr)
+	logger.Printf("[Server] WebSocket 模式启动中...")
+	logger.Printf("[Server] 目标地址: %s", s.config.TargetAddr)
 
 	wsServer := transport.NewWSServer(s.config.WSConfig, s.cipher, s.handleWSConnection)
 
@@ -82,22 +82,22 @@ func (s *Server) startWebSocket() error {
 	}
 
 	if s.config.WSConfig.EnableTLS {
-		log.Printf("[Server] 🔒 启用 TLS，监听地址: %s%s", s.config.ListenAddr, s.config.WSConfig.Path)
+		logger.Printf("[Server] 启用 TLS，监听地址: %s%s", s.config.ListenAddr, s.config.WSConfig.Path)
 		return server.ListenAndServeTLS(s.config.WSConfig.TLSCert, s.config.WSConfig.TLSKey)
 	}
 
-	log.Printf("[Server] 🚀 启动成功，监听地址: ws://%s%s", s.config.ListenAddr, s.config.WSConfig.Path)
+	logger.Printf("[Server] 启动，监听地址: ws://%s%s", s.config.ListenAddr, s.config.WSConfig.Path)
 	return server.ListenAndServe()
 }
 
 func (s *Server) handleWSConnection(wsConn *transport.WSConn) {
 	defer wsConn.Close()
 	clientAddr := wsConn.RemoteAddr().String()
-	log.Printf("[Server] 📥 新 WebSocket 连接: %s", clientAddr)
+	logger.Printf("[Server] 新 WebSocket 连接: %s", clientAddr)
 
 	targetData, err := wsConn.ReadEncrypted()
 	if err != nil {
-		log.Printf("[Server] ❌ 读取目标地址失败: %v", err)
+		logger.Printf("[Server] 读取目标地址失败: %v", err)
 		return
 	}
 
@@ -106,26 +106,26 @@ func (s *Server) handleWSConnection(wsConn *transport.WSConn) {
 		targetAddr = s.config.TargetAddr
 	}
 
-	log.Printf("[Server] 🔗 连接目标: %s", targetAddr)
+	logger.Printf("[Server] 连接目标: %s", targetAddr)
 
 	targetConn, err := net.DialTimeout("tcp", targetAddr, 10*time.Second)
 	if err != nil {
-		log.Printf("[Server] ❌ 连接目标失败: %v", err)
+		logger.Printf("[Server] 连接目标失败: %v", err)
 		wsConn.WriteEncrypted([]byte("ERROR:" + err.Error()))
 		return
 	}
 	defer targetConn.Close()
 
 	if err := wsConn.WriteEncrypted([]byte("OK")); err != nil {
-		log.Printf("[Server] ❌ 发送响应失败: %v", err)
+		logger.Printf("[Server] 发送响应失败: %v", err)
 		return
 	}
 
-	log.Printf("[Server] ✅ WebSocket 隧道建立成功: %s <-> %s", clientAddr, targetAddr)
+	logger.Printf("[Server] WebSocket 隧道建立: %s <-> %s", clientAddr, targetAddr)
 
 	transport.BridgeWSToTCP(wsConn, targetConn)
 
-	log.Printf("[Server] 🔌 WebSocket 连接关闭: %s", clientAddr)
+	logger.Printf("[Server] WebSocket 连接关闭: %s", clientAddr)
 }
 
 func (s *Server) startTCP() error {
@@ -135,8 +135,8 @@ func (s *Server) startTCP() error {
 	}
 	s.ln = ln
 
-	log.Printf("[Server] 🚀 TCP 模式启动成功，监听地址: %s", s.config.ListenAddr)
-	log.Printf("[Server] 🎯 目标地址: %s", s.config.TargetAddr)
+	logger.Printf("[Server] TCP 模式启动，监听地址: %s", s.config.ListenAddr)
+	logger.Printf("[Server] 目标地址: %s", s.config.TargetAddr)
 
 	for {
 		conn, err := ln.Accept()
@@ -144,7 +144,7 @@ func (s *Server) startTCP() error {
 			if strings.Contains(err.Error(), "use of closed network connection") {
 				return nil
 			}
-			log.Printf("[Server] ⚠️ Accept 错误: %v", err)
+			logger.Printf("[Server] Accept 错误: %v", err)
 			continue
 		}
 
@@ -167,13 +167,13 @@ func (s *Server) Stop() error {
 func (s *Server) handleTCPConnection(clientConn net.Conn) {
 	defer clientConn.Close()
 	clientAddr := clientConn.RemoteAddr().String()
-	log.Printf("[Server] 📥 新 TCP 连接来自: %s", clientAddr)
+	logger.Printf("[Server] 新 TCP 连接来自: %s", clientAddr)
 
 	cryptoConn := crypto.NewCryptoConn(clientConn, s.cipher)
 
 	targetData, err := cryptoConn.ReadEncrypted()
 	if err != nil {
-		log.Printf("[Server] ❌ 读取目标地址失败: %v", err)
+		logger.Printf("[Server] 读取目标地址失败: %v", err)
 		return
 	}
 
@@ -182,22 +182,22 @@ func (s *Server) handleTCPConnection(clientConn net.Conn) {
 		targetAddr = s.config.TargetAddr
 	}
 
-	log.Printf("[Server] 🔗 连接目标: %s", targetAddr)
+	logger.Printf("[Server] 连接目标: %s", targetAddr)
 
 	targetConn, err := net.DialTimeout("tcp", targetAddr, 10*time.Second)
 	if err != nil {
-		log.Printf("[Server] ❌ 连接目标失败: %v", err)
+		logger.Printf("[Server] 连接目标失败: %v", err)
 		cryptoConn.WriteEncrypted([]byte("ERROR:" + err.Error()))
 		return
 	}
 	defer targetConn.Close()
 
 	if err := cryptoConn.WriteEncrypted([]byte("OK")); err != nil {
-		log.Printf("[Server] ❌ 发送响应失败: %v", err)
+		logger.Printf("[Server] 发送响应失败: %v", err)
 		return
 	}
 
-	log.Printf("[Server] ✅ TCP 隧道建立成功: %s <-> %s", clientAddr, targetAddr)
+	logger.Printf("[Server] TCP 隧道建立: %s <-> %s", clientAddr, targetAddr)
 
 	var wg sync.WaitGroup
 	wg.Add(2)
@@ -213,7 +213,7 @@ func (s *Server) handleTCPConnection(clientConn net.Conn) {
 	}()
 
 	wg.Wait()
-	log.Printf("[Server] 🔌 TCP 连接关闭: %s", clientAddr)
+	logger.Printf("[Server] TCP 连接关闭: %s", clientAddr)
 }
 
 func (s *Server) forwardFromClient(src *crypto.CryptoConn, dst net.Conn) {
@@ -221,13 +221,13 @@ func (s *Server) forwardFromClient(src *crypto.CryptoConn, dst net.Conn) {
 		data, err := src.ReadEncrypted()
 		if err != nil {
 			if err != io.EOF {
-				log.Printf("[Server] 读取客户端数据错误: %v", err)
+				logger.Printf("[Server] 读取客户端数据错误: %v", err)
 			}
 			return
 		}
 
 		if _, err := dst.Write(data); err != nil {
-			log.Printf("[Server] 写入目标数据错误: %v", err)
+			logger.Printf("[Server] 写入目标数据错误: %v", err)
 			return
 		}
 	}
@@ -239,13 +239,13 @@ func (s *Server) forwardToClient(src net.Conn, dst *crypto.CryptoConn) {
 		n, err := src.Read(buf)
 		if err != nil {
 			if err != io.EOF {
-				log.Printf("[Server] 读取目标数据错误: %v", err)
+				logger.Printf("[Server] 读取目标数据错误: %v", err)
 			}
 			return
 		}
 
 		if err := dst.WriteEncrypted(buf[:n]); err != nil {
-			log.Printf("[Server] 写入客户端数据错误: %v", err)
+			logger.Printf("[Server] 写入客户端数据错误: %v", err)
 			return
 		}
 	}

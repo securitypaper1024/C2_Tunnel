@@ -27,6 +27,10 @@ type ServerConfig struct {
 	WSKey    string `json:"ws_key" yaml:"ws_key"`
 
 	ACL ACLConfig `json:"acl" yaml:"acl"`
+
+	LogPath string `json:"log_path" yaml:"log_path"`
+	Daemon  bool   `json:"daemon" yaml:"daemon"`
+	Quiet   bool   `json:"quiet" yaml:"quiet"`
 }
 
 type ClientConfig struct {
@@ -41,6 +45,10 @@ type ClientConfig struct {
 	WSPath       string `json:"ws_path" yaml:"ws_path"`
 	WSTLS        bool   `json:"ws_tls" yaml:"ws_tls"`
 	WSSkipVerify bool   `json:"ws_skip_verify" yaml:"ws_skip_verify"`
+
+	LogPath string `json:"log_path" yaml:"log_path"`
+	Daemon  bool   `json:"daemon" yaml:"daemon"`
+	Quiet   bool   `json:"quiet" yaml:"quiet"`
 }
 
 type ACLConfig struct {

@@ -5,7 +5,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
-	"log"
+	"tunnel/pkg/logger"
 	"net"
 	"net/http"
 	"sync"
@@ -132,14 +132,14 @@ func (s *WSServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	conn, err := s.upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		log.Printf("[WS-Server] ⚠️ 升级 WebSocket 失败: %v", err)
+		logger.Printf("[WS-Server] 升级 WebSocket 失败: %v", err)
 		return
 	}
 
 	wsConn := NewWSConn(conn, s.cipher)
 	wsConn.StartPing(s.config.PingInterval)
 
-	log.Printf("[WS-Server] 📥 新 WebSocket 连接: %s", conn.RemoteAddr())
+	logger.Printf("[WS-Server] 新 WebSocket 连接: %s", conn.RemoteAddr())
 
 	s.handler(wsConn)
 }
@@ -172,11 +172,11 @@ func (s *WSServer) Start(addr string) error {
 	}
 
 	if s.config.EnableTLS {
-		log.Printf("[WS-Server] 🔒 启用 TLS，监听地址: %s%s", addr, s.config.Path)
+		logger.Printf("[WS-Server] 启用 TLS，监听地址: %s%s", addr, s.config.Path)
 		return server.ListenAndServeTLS(s.config.TLSCert, s.config.TLSKey)
 	}
 
-	log.Printf("[WS-Server] 🚀 启动成功，监听地址: ws://%s%s", addr, s.config.Path)
+	logger.Printf("[WS-Server] 启动，监听地址: ws://%s%s", addr, s.config.Path)
 	return server.ListenAndServe()
 }
 
@@ -227,7 +227,7 @@ func (c *WSClient) Connect(serverAddr string) (*WSConn, error) {
 	wsConn := NewWSConn(conn, c.cipher)
 	wsConn.StartPing(c.config.PingInterval)
 
-	log.Printf("[WS-Client] ✅ 连接成功: %s", url)
+	logger.Printf("[WS-Client] 连接成功: %s", url)
 
 	return wsConn, nil
 }
@@ -242,12 +242,12 @@ func BridgeWSToTCP(ws *WSConn, tcp net.Conn) {
 			data, err := ws.ReadEncrypted()
 			if err != nil {
 				if err != io.EOF {
-					log.Printf("[Bridge] WS->TCP 读取错误: %v", err)
+					logger.Printf("[Bridge] WS->TCP 读取错误: %v", err)
 				}
 				return
 			}
 			if _, err := tcp.Write(data); err != nil {
-				log.Printf("[Bridge] WS->TCP 写入错误: %v", err)
+				logger.Printf("[Bridge] WS->TCP 写入错误: %v", err)
 				return
 			}
 		}
@@ -260,12 +260,12 @@ func BridgeWSToTCP(ws *WSConn, tcp net.Conn) {
 			n, err := tcp.Read(buf)
 			if err != nil {
 				if err != io.EOF {
-					log.Printf("[Bridge] TCP->WS 读取错误: %v", err)
+					logger.Printf("[Bridge] TCP->WS 读取错误: %v", err)
 				}
 				return
 			}
 			if err := ws.WriteEncrypted(buf[:n]); err != nil {
-				log.Printf("[Bridge] TCP->WS 写入错误: %v", err)
+				logger.Printf("[Bridge] TCP->WS 写入错误: %v", err)
 				return
 			}
 		}

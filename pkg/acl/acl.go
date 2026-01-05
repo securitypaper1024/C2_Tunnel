@@ -2,7 +2,7 @@ package acl
 
 import (
 	"fmt"
-	"log"
+	"tunnel/pkg/logger"
 	"net"
 	"strings"
 	"sync"
@@ -54,7 +54,7 @@ func New(cfg Config) (*ACL, error) {
 		}
 	}
 
-	log.Printf("[ACL] ✅ 初始化完成，模式: %s，白名单: %d 条，黑名单: %d 条",
+	logger.Printf("[ACL] 初始化完成，模式: %s，白名单: %d 条，黑名单: %d 条",
 		acl.mode, len(acl.whitelist)+len(acl.whiteIPs), len(acl.blacklist)+len(acl.blackIPs))
 
 	return acl, nil
@@ -111,7 +111,7 @@ func (a *ACL) IsAllowed(addr string) bool {
 
 	ip := extractIP(addr)
 	if ip == nil {
-		log.Printf("[ACL] ⚠️ 无法解析 IP 地址: %s", addr)
+		logger.Printf("[ACL] 无法解析 IP 地址: %s", addr)
 		return false
 	}
 
@@ -122,14 +122,14 @@ func (a *ACL) IsAllowed(addr string) bool {
 	case ModeWhitelist:
 		allowed := a.isInWhitelist(ip)
 		if !allowed {
-			log.Printf("[ACL] 🚫 拒绝访问 (不在白名单): %s", addr)
+			logger.Printf("[ACL] 拒绝访问 (不在白名单): %s", addr)
 		}
 		return allowed
 
 	case ModeBlacklist:
 		blocked := a.isInBlacklist(ip)
 		if blocked {
-			log.Printf("[ACL] 🚫 拒绝访问 (在黑名单中): %s", addr)
+			logger.Printf("[ACL] 拒绝访问 (在黑名单中): %s", addr)
 		}
 		return !blocked
 

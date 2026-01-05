@@ -1,6 +1,6 @@
 # SecureTunnel - AES-256-CFB 加密隧道
 
-> 一个基于 Go 语言的安全隧道工具，专为 CobaltStrike 等 C2 框架设计，提供 AES-256-CFB 加密传输。
+> 一个基于 Go 语言的安全隧道工具，专为 CobaltStrike 等 C2 框架设计。通过多层加密和流量伪装技术，有效隐藏 C2 服务器真实地址，防止 DDoS 攻击，提供 ACL 访问控制，实现流量加密包装，确保通信安全与隐蔽性。
 
 ---
 
@@ -17,8 +17,11 @@
 
 ---
 
-## ✨ v1.2.0 新功能
+## ✨ v1.3.0 新功能
 
+- 📝 **日志记录** - 支持将日志输出到文件，支持静默模式
+- 🔇 **后台运行** - 支持后台运行模式，不显示终端窗口，适合生产环境
+- 🎯 **代码优化** - 移除所有装饰性输出（emoji、banner），简化日志信息，提升专业性
 - 📄 **配置文件支持** - 支持 YAML/JSON 配置文件，启动后可自动删除
 - 🛡️ **IP 黑白名单** - Server 端支持 IP/CIDR 访问控制
 - 🔒 **安全删除** - 配置文件覆写后删除，防止恢复
@@ -27,14 +30,31 @@
 
 ## 📋 功能特点
 
-- **🔐 AES-256-CFB 加密** - 所有传输数据均经过 AES-256-CFB 加密
-- **🔄 双向加密** - 请求和响应均加密传输
-- **🌐 HTTPS CONNECT 代理** - 支持 HTTP/HTTPS CONNECT 代理模式
-- **📡 WebSocket 传输** - 支持 WS/WSS 协议，流量更隐蔽
-- **📄 配置文件** - 支持 YAML/JSON 配置，启动后自动删除
-- **🛡️ 访问控制** - Server 端支持 IP 黑白名单
-- **⚡ 高并发** - 基于 Go 协程，支持大量并发连接
-- **🌍 跨平台** - 支持 Windows、Linux、macOS
+### 🔐 加密与安全
+- **AES-256-CFB 加密** - 所有传输数据均经过 AES-256-CFB 加密，确保数据安全
+- **双向加密传输** - 请求和响应均加密传输，端到端保护
+- **流量加密包装** - 多层加密包装，隐藏真实通信内容
+- **随机 IV 机制** - 每个数据包使用随机 IV，防止流量分析
+
+### 🛡️ 防护与隐蔽
+- **隐藏 C2 服务器地址** - 通过代理隧道完全隐藏真实 C2 服务器 IP，防止直接暴露
+- **防止 DDoS 攻击** - 通过中间代理层，有效隔离和防护 C2 服务器免受直接攻击
+- **ACL 访问控制** - Server 端支持 IP/CIDR 黑白名单，精确控制访问来源
+- **流量伪装** - 支持 WebSocket 协议，将 C2 流量伪装成正常 Web 流量
+
+### 🌐 传输模式
+- **HTTPS CONNECT 代理** - 支持 HTTP/HTTPS CONNECT 代理模式
+- **WebSocket 传输** - 支持 WS/WSS 协议，流量更隐蔽，难以被检测
+- **TLS 加密传输** - 支持 WebSocket + TLS (WSS)，提供额外加密层
+
+### ⚙️ 配置与管理
+- **配置文件支持** - 支持 YAML/JSON 配置，启动后自动删除
+- **安全删除** - 配置文件覆写后删除，防止数据恢复
+- **日志记录** - 支持将日志输出到文件，便于审计和调试
+- **后台运行** - 支持后台运行模式，适合生产环境部署
+- **静默模式** - 支持静默模式，不输出到终端，仅记录到日志文件
+- **高并发支持** - 基于 Go 协程，支持大量并发连接
+- **跨平台** - 支持 Windows、Linux、macOS
 
 ---
 
@@ -45,9 +65,16 @@
 **工作流程：**
 
 1. Owner Client (Beacon) 连接到本地 Proxy Client
-2. Proxy Client 将流量加密后转发到 Proxy Server (VPS)
+2. Proxy Client 将流量加密包装后转发到 Proxy Server (VPS)
 3. Proxy Server 解密后转发到 Owner Server (TeamServer)
 4. 响应数据按相反方向加密传输
+
+**安全优势：**
+
+- ✅ **隐藏真实地址** - C2 服务器真实 IP 完全隐藏，只暴露 VPS 代理地址
+- ✅ **DDoS 防护** - 攻击者只能攻击 VPS 代理层，无法直接攻击 C2 服务器
+- ✅ **流量加密** - 所有流量经过 AES-256-CFB 加密，即使被截获也无法解密
+- ✅ **访问控制** - 通过 ACL 精确控制哪些 IP 可以连接，防止未授权访问
 
 ---
 
@@ -84,6 +111,30 @@ GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o tunnel-client_linux ./cmd/c
 **Client 端：**
 ```bash
 ./tunnel-client -listen 127.0.0.1:443 -server vps.example.com:8888 -password "YourPass"
+```
+
+### 后台运行和日志记录
+
+**后台运行并记录日志：**
+```bash
+# Server 端后台运行
+./tunnel-server -listen 0.0.0.0:8888 -target 127.0.0.1:50050 -password "YourPass" \
+  -daemon -log /var/log/tunnel-server.log -quiet
+
+# Client 端后台运行
+./tunnel-client -listen 127.0.0.1:443 -server vps.example.com:8888 -password "YourPass" \
+  -daemon -log /var/log/tunnel-client.log -quiet
+```
+
+**仅记录日志（不后台运行）：**
+```bash
+# 输出到终端和日志文件
+./tunnel-server -listen 0.0.0.0:8888 -target 127.0.0.1:50050 -password "YourPass" \
+  -log /var/log/tunnel-server.log
+
+# 仅记录到日志文件（静默模式）
+./tunnel-server -listen 0.0.0.0:8888 -target 127.0.0.1:50050 -password "YourPass" \
+  -log /var/log/tunnel-server.log -quiet
 ```
 
 ---
@@ -193,6 +244,11 @@ server:
       - "127.0.0.1"
     blacklist:
       - "192.168.1.100"
+  
+  # 日志和运行模式
+  log_path: "/var/log/tunnel-server.log"  # 日志文件路径（可选）
+  daemon: false  # 后台运行模式
+  quiet: false   # 静默模式，不输出到终端
 ```
 
 **Client 配置 (client.yaml):**
@@ -211,6 +267,11 @@ client:
   ws_path: "/ws"
   ws_tls: false
   ws_skip_verify: false
+  
+  # 日志和运行模式
+  log_path: "/var/log/tunnel-client.log"  # 日志文件路径（可选）
+  daemon: false  # 后台运行模式
+  quiet: false   # 静默模式，不输出到终端
 ```
 
 ---
@@ -294,6 +355,37 @@ Client 端支持 HTTPS CONNECT 代理模式：
 
 ---
 
+## 🎯 v1.3.0 代码优化说明
+
+本次更新对代码进行了全面优化，提升了工具的专业性和实用性：
+
+### 优化内容
+
+1. **移除装饰性输出**
+   - 删除了所有 ASCII 艺术字 banner
+   - 移除了所有 emoji 表情符号
+   - 简化了所有日志输出文本
+   - 使输出更加专业和简洁
+
+2. **日志系统重构**
+   - 实现了统一的日志管理模块
+   - 支持同时输出到终端和文件
+   - 支持静默模式，仅记录到日志文件
+   - 日志格式统一，包含时间戳和微秒精度
+
+3. **后台运行优化**
+   - 修复了 daemon 模式的参数传递问题
+   - 优化了 Windows 和 Unix 系统的后台运行实现
+   - 确保后台进程可以正常终止
+   - 支持通过配置文件启用后台运行
+
+4. **代码质量提升**
+   - 统一了所有模块的日志调用方式
+   - 移除了冗余的装饰性代码
+   - 提升了代码的可维护性
+
+---
+
 ## 📖 参数列表
 
 ### Server 参数 (tunnel-server)
@@ -322,6 +414,14 @@ Client 端支持 HTTPS CONNECT 代理模式：
 | `-gen-config` | 生成示例配置文件 |
 | `-delete-config` | 启动后删除配置文件 |
 | `-secure-delete` | 安全删除 (覆写后删除) |
+
+### 日志和运行模式参数
+
+| 参数 | 说明 | 默认值 |
+|------|------|--------|
+| `-log` | 日志文件路径 | - |
+| `-daemon` | 后台运行模式 | false |
+| `-quiet` | 静默模式，不输出到终端 | false |
 
 ### WebSocket 参数
 
@@ -353,12 +453,20 @@ Client 端支持 HTTPS CONNECT 代理模式：
 - ✅ **密钥派生** - 密码通过 SHA-256 哈希转换为 32 字节 AES 密钥
 - ✅ **随机 IV** - 每个数据包使用随机 IV，确保相同明文产生不同密文
 - ✅ **AES-256-CFB** - 使用 AES-256-CFB 模式，提供强加密保护
+- ✅ **流量加密包装** - 多层加密包装，有效隐藏真实通信内容，防止流量分析
+
+### 防护机制
+
+- ✅ **隐藏 C2 地址** - 通过代理隧道架构，C2 服务器真实 IP 完全隐藏，只暴露 VPS 代理地址
+- ✅ **DDoS 防护** - 攻击者只能攻击 VPS 代理层，无法直接定位和攻击真实的 C2 服务器
+- ✅ **ACL 访问控制** - 通过 IP/CIDR 黑白名单精确控制访问来源，拒绝未授权连接
+- ✅ **流量伪装** - WebSocket 模式将 C2 流量伪装成正常 Web 流量，降低被检测风险
 
 ### 配置安全
 
 - ✅ **安全删除** - 使用 `-secure-delete` 参数可覆写后删除配置文件，防止数据恢复
 - ✅ **自动删除** - 使用 `-delete-config` 参数可在启动后自动删除配置文件
-- ✅ **访问控制** - 建议启用 ACL 限制访问来源，只允许信任的 IP 连接
+- ✅ **访问控制** - 建议启用 ACL 白名单模式，只允许信任的 IP 连接
 
 ### 最佳实践
 
@@ -381,6 +489,29 @@ Client 端支持 HTTPS CONNECT 代理模式：
    - 注意日志中可能包含敏感信息
    - 定期清理日志文件
    - 避免在日志中记录密码等敏感信息
+   - 使用 `-quiet` 模式可避免在终端输出敏感信息
+   - 建议将日志文件存储在安全位置，并设置适当的文件权限
+
+5. **后台运行**
+   - 生产环境建议使用 `-daemon` 模式后台运行
+   - 结合 `-log` 和 `-quiet` 参数，实现完全静默运行
+   - 使用配置文件时，可在配置文件中设置 `daemon: true` 和 `quiet: true`
+   - **Windows 系统终止后台进程：**
+     ```bash
+     # 终止单个进程
+     taskkill /F /IM tunnel-server.exe
+     
+     # 终止进程树（推荐，可终止所有子进程）
+     taskkill /F /T /IM tunnel-server.exe
+     ```
+   - **Linux 系统终止后台进程：**
+     ```bash
+     # 使用进程名终止
+     pkill -f tunnel-server
+     
+     # 或使用 PID
+     kill -9 <PID>
+     ```
 
 ---
 
