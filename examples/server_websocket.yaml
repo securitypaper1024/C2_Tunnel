@@ -1,4 +1,4 @@
-# SecureTunnel Server WebSocket 模式配置示例
+# C2Tunnel Server WebSocket 模式配置示例
 # 使用方法: tunnel -config server_websocket.yaml
 
 mode: server

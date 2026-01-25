@@ -1,6 +1,6 @@
 @echo off
 echo ========================================
-echo   SecureTunnel Build Script
+echo   C2Tunnel Build Script
 echo ========================================
 echo.
 

@@ -1,4 +1,4 @@
-# SecureTunnel - AES-256-CFB 加密隧道
+# C2Tunnel - AES-256-CFB 加密隧道
 
 > 一个基于 Go 语言的安全隧道工具，专为 CobaltStrike 等 C2 框架设计。通过多层加密和流量伪装技术，有效隐藏 C2 服务器真实地址，防止 DDoS 攻击，提供 ACL 访问控制，实现流量加密包装，确保通信安全与隐蔽性。
 
