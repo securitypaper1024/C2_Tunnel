@@ -15,6 +15,13 @@ import (
 	"tunnel/pkg/transport"
 )
 
+var bufferPool = sync.Pool{
+	New: func() interface{} {
+		buf := make([]byte, 32*1024)
+		return &buf
+	},
+}
+
 type Config struct {
 	ListenAddr   string
 	TargetAddr   string
@@ -108,13 +115,23 @@ func (s *Server) handleWSConnection(wsConn *transport.WSConn) {
 
 	logger.Printf("[Server] 连接目标: %s", targetAddr)
 
-	targetConn, err := net.DialTimeout("tcp", targetAddr, 10*time.Second)
+	dialer := net.Dialer{
+		Timeout:   10 * time.Second,
+		KeepAlive: 30 * time.Second,
+	}
+	targetConn, err := dialer.Dial("tcp", targetAddr)
 	if err != nil {
 		logger.Printf("[Server] 连接目标失败: %v", err)
 		wsConn.WriteEncrypted([]byte("ERROR:" + err.Error()))
 		return
 	}
 	defer targetConn.Close()
+
+	if tcpConn, ok := targetConn.(*net.TCPConn); ok {
+		tcpConn.SetNoDelay(true)
+		tcpConn.SetKeepAlive(true)
+		tcpConn.SetKeepAlivePeriod(30 * time.Second)
+	}
 
 	if err := wsConn.WriteEncrypted([]byte("OK")); err != nil {
 		logger.Printf("[Server] 发送响应失败: %v", err)
@@ -184,13 +201,23 @@ func (s *Server) handleTCPConnection(clientConn net.Conn) {
 
 	logger.Printf("[Server] 连接目标: %s", targetAddr)
 
-	targetConn, err := net.DialTimeout("tcp", targetAddr, 10*time.Second)
+	dialer := net.Dialer{
+		Timeout:   10 * time.Second,
+		KeepAlive: 30 * time.Second,
+	}
+	targetConn, err := dialer.Dial("tcp", targetAddr)
 	if err != nil {
 		logger.Printf("[Server] 连接目标失败: %v", err)
 		cryptoConn.WriteEncrypted([]byte("ERROR:" + err.Error()))
 		return
 	}
 	defer targetConn.Close()
+
+	if tcpConn, ok := targetConn.(*net.TCPConn); ok {
+		tcpConn.SetNoDelay(true)
+		tcpConn.SetKeepAlive(true)
+		tcpConn.SetKeepAlivePeriod(30 * time.Second)
+	}
 
 	if err := cryptoConn.WriteEncrypted([]byte("OK")); err != nil {
 		logger.Printf("[Server] 发送响应失败: %v", err)
@@ -217,6 +244,11 @@ func (s *Server) handleTCPConnection(clientConn net.Conn) {
 }
 
 func (s *Server) forwardFromClient(src *crypto.CryptoConn, dst net.Conn) {
+	defer func() {
+		if tcpConn, ok := dst.(*net.TCPConn); ok {
+			tcpConn.CloseWrite()
+		}
+	}()
 	for {
 		data, err := src.ReadEncrypted()
 		if err != nil {
@@ -234,7 +266,14 @@ func (s *Server) forwardFromClient(src *crypto.CryptoConn, dst net.Conn) {
 }
 
 func (s *Server) forwardToClient(src net.Conn, dst *crypto.CryptoConn) {
-	buf := make([]byte, 32*1024)
+	defer func() {
+		if tcpConn, ok := dst.Conn.(*net.TCPConn); ok {
+			tcpConn.CloseWrite()
+		}
+	}()
+	bufPtr := bufferPool.Get().(*[]byte)
+	buf := *bufPtr
+	defer bufferPool.Put(bufPtr)
 	for {
 		n, err := src.Read(buf)
 		if err != nil {

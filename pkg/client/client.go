@@ -16,6 +16,13 @@ import (
 	"tunnel/pkg/transport"
 )
 
+var bufferPool = sync.Pool{
+	New: func() interface{} {
+		buf := make([]byte, 32*1024)
+		return &buf
+	},
+}
+
 type Config struct {
 	ListenAddr   string
 	ServerAddr   string
@@ -161,7 +168,9 @@ func (c *Client) handleWSConnection(ownerConn net.Conn, ownerAddr, targetAddr st
 
 	go func() {
 		defer wg.Done()
-		buf := make([]byte, 32*1024)
+		bufPtr := bufferPool.Get().(*[]byte)
+		buf := *bufPtr
+		defer bufferPool.Put(bufPtr)
 		for {
 			n, err := ownerConn.Read(buf)
 			if err != nil {
@@ -199,12 +208,22 @@ func (c *Client) handleWSConnection(ownerConn net.Conn, ownerAddr, targetAddr st
 }
 
 func (c *Client) handleTCPConnection(ownerConn net.Conn, ownerAddr, targetAddr string, initialData []byte) {
-	serverConn, err := net.DialTimeout("tcp", c.config.ServerAddr, 10*time.Second)
+	dialer := net.Dialer{
+		Timeout:   10 * time.Second,
+		KeepAlive: 30 * time.Second,
+	}
+	serverConn, err := dialer.Dial("tcp", c.config.ServerAddr)
 	if err != nil {
 		logger.Printf("[Client]  连接 Server 失败: %v", err)
 		return
 	}
 	defer serverConn.Close()
+
+	if tcpConn, ok := serverConn.(*net.TCPConn); ok {
+		tcpConn.SetNoDelay(true)
+		tcpConn.SetKeepAlive(true)
+		tcpConn.SetKeepAlivePeriod(30 * time.Second)
+	}
 
 	cryptoConn := crypto.NewCryptoConn(serverConn, c.cipher)
 
@@ -290,7 +309,14 @@ func (c *Client) handleHTTPSConnect(conn net.Conn) (string, []byte, error) {
 }
 
 func (c *Client) forwardToServer(src net.Conn, dst *crypto.CryptoConn) {
-	buf := make([]byte, 32*1024)
+	defer func() {
+		if tcpConn, ok := dst.Conn.(*net.TCPConn); ok {
+			tcpConn.CloseWrite()
+		}
+	}()
+	bufPtr := bufferPool.Get().(*[]byte)
+	buf := *bufPtr
+	defer bufferPool.Put(bufPtr)
 	for {
 		n, err := src.Read(buf)
 		if err != nil {
@@ -308,6 +334,11 @@ func (c *Client) forwardToServer(src net.Conn, dst *crypto.CryptoConn) {
 }
 
 func (c *Client) forwardFromServer(src *crypto.CryptoConn, dst net.Conn) {
+	defer func() {
+		if tcpConn, ok := dst.(*net.TCPConn); ok {
+			tcpConn.CloseWrite()
+		}
+	}()
 	for {
 		data, err := src.ReadEncrypted()
 		if err != nil {

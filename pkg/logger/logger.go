@@ -5,14 +5,25 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sync"
 )
 
 var (
-	DefaultLogger *log.Logger
-	LogFile      *os.File
+	mu            sync.RWMutex
+	defaultLogger *log.Logger
+	logFile       *os.File
+	initialized   bool
 )
 
 func InitLogger(logPath string, quiet bool) error {
+	mu.Lock()
+	defer mu.Unlock()
+
+	if initialized && logFile != nil {
+		logFile.Close()
+		logFile = nil
+	}
+
 	var writers []io.Writer
 
 	if logPath != "" {
@@ -27,7 +38,7 @@ func InitLogger(logPath string, quiet bool) error {
 		if err != nil {
 			return err
 		}
-		LogFile = file
+		logFile = file
 		writers = append(writers, file)
 	}
 
@@ -35,47 +46,59 @@ func InitLogger(logPath string, quiet bool) error {
 		writers = append(writers, os.Stdout)
 	}
 
+	if len(writers) == 0 {
+		writers = append(writers, io.Discard)
+	}
+
 	multiWriter := io.MultiWriter(writers...)
-	DefaultLogger = log.New(multiWriter, "", log.LstdFlags|log.Lmicroseconds)
+	defaultLogger = log.New(multiWriter, "", log.LstdFlags|log.Lmicroseconds)
+	initialized = true
 
 	return nil
 }
 
 func Close() {
-	if LogFile != nil {
-		LogFile.Close()
+	mu.Lock()
+	defer mu.Unlock()
+
+	if logFile != nil {
+		logFile.Close()
+		logFile = nil
 	}
+	initialized = false
+}
+
+func getLogger() *log.Logger {
+	mu.RLock()
+	defer mu.RUnlock()
+
+	if defaultLogger != nil {
+		return defaultLogger
+	}
+	return log.Default()
 }
 
 func Printf(format string, v ...interface{}) {
-	if DefaultLogger != nil {
-		DefaultLogger.Printf(format, v...)
-	} else {
-		log.Printf(format, v...)
-	}
+	getLogger().Printf(format, v...)
 }
 
 func Println(v ...interface{}) {
-	if DefaultLogger != nil {
-		DefaultLogger.Println(v...)
-	} else {
-		log.Println(v...)
-	}
+	getLogger().Println(v...)
+}
+
+func Print(v ...interface{}) {
+	getLogger().Print(v...)
 }
 
 func Fatal(v ...interface{}) {
-	if DefaultLogger != nil {
-		DefaultLogger.Fatal(v...)
-	} else {
-		log.Fatal(v...)
-	}
+	getLogger().Fatal(v...)
 }
 
 func Fatalf(format string, v ...interface{}) {
-	if DefaultLogger != nil {
-		DefaultLogger.Fatalf(format, v...)
-	} else {
-		log.Fatalf(format, v...)
-	}
+	getLogger().Fatalf(format, v...)
+}
+
+func Fatalln(v ...interface{}) {
+	getLogger().Fatalln(v...)
 }
 

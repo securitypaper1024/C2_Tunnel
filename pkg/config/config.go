@@ -104,15 +104,25 @@ func SecureDeleteConfigFile(path string) error {
 	if err != nil {
 		return fmt.Errorf("failed to open config file for overwrite: %w", err)
 	}
+	defer file.Close()
 
-	zeros := make([]byte, info.Size())
-	for i := range zeros {
-		zeros[i] = 0x00
+	size := info.Size()
+	buf := make([]byte, size)
+
+	patterns := []byte{0x00, 0xFF, 0xAA, 0x55, 0x00}
+	for _, pattern := range patterns {
+		for i := range buf {
+			buf[i] = pattern
+		}
+		if _, err := file.WriteAt(buf, 0); err != nil {
+			return fmt.Errorf("failed to overwrite file: %w", err)
+		}
+		if err := file.Sync(); err != nil {
+			return fmt.Errorf("failed to sync file: %w", err)
+		}
 	}
-	file.Write(zeros)
-	file.Sync()
-	file.Close()
 
+	file.Close()
 	return os.Remove(path)
 }
 
@@ -177,7 +187,29 @@ func GenerateServerExampleConfig() *Config {
 		Server: ServerConfig{
 			Listen:   "0.0.0.0:8888",
 			Target:   "127.0.0.1:50050",
-			Password: "YourSecurePassword@2024",
+			Password: "YourSecurePassword",
+		},
+	}
+}
+
+func GenerateClientExampleConfig() *Config {
+	return &Config{
+		Mode: "client",
+		Client: ClientConfig{
+			Listen:   "127.0.0.1:443",
+			Server:   "vps.example.com:8888",
+			Password: "YourSecurePassword",
+		},
+	}
+}
+
+func GenerateServerFullConfig() *Config {
+	return &Config{
+		Mode: "server",
+		Server: ServerConfig{
+			Listen:   "0.0.0.0:8888",
+			Target:   "127.0.0.1:50050",
+			Password: "YourSecurePassword",
 			EnableWS: false,
 			WSPath:   "/ws",
 			WSTLS:    false,
@@ -187,27 +219,25 @@ func GenerateServerExampleConfig() *Config {
 				Whitelist: []string{
 					"192.168.1.0/24",
 					"10.0.0.0/8",
-					"127.0.0.1",
-				},
-				Blacklist: []string{
-					"192.168.1.100",
 				},
 			},
+			Daemon: false,
+			Quiet:  false,
 		},
 	}
 }
 
-func GenerateClientExampleConfig() *Config {
+func GenerateClientFullConfig() *Config {
 	return &Config{
 		Mode: "client",
 		Client: ClientConfig{
-			Listen:       "127.0.0.1:443",
-			Server:       "vps.example.com:8888",
-			Password:     "YourSecurePassword@2024",
-			EnableHTTPS:  false,
-			EnableWS:     false,
-			WSPath:       "/ws",
-			WSSkipVerify: false,
+			Listen:   "127.0.0.1:443",
+			Server:   "vps.example.com:8888",
+			Password: "YourSecurePassword",
+			EnableWS: false,
+			WSPath:   "/ws",
+			Daemon:   false,
+			Quiet:    false,
 		},
 	}
 }

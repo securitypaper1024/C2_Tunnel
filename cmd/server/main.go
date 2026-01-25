@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -16,50 +17,87 @@ import (
 	"tunnel/pkg/transport"
 )
 
+const Version = "1.4.0"
+
 func main() {
-	listen := flag.String("listen", "", "监听地址")
-	target := flag.String("target", "", "目标地址")
-	password := flag.String("password", "SecureTunnel@2024", "加密密码")
+	var listen, target, password string
+	var enableWS, wsTLS bool
+	var wsPath, wsCert, wsKey string
+	var configFile, logPath string
+	var deleteConfig, secureDelete, daemonMode, quiet, showVersion, showHelp bool
+	var genConfig string
+	var aclEnable bool
+	var aclMode, aclWhitelist, aclBlacklist string
 
-	enableWS := flag.Bool("ws", false, "启用 WebSocket 传输模式")
-	wsPath := flag.String("ws-path", "/ws", "WebSocket 路径")
-	wsTLS := flag.Bool("ws-tls", false, "启用 WebSocket TLS")
-	wsCert := flag.String("ws-cert", "", "TLS 证书文件路径")
-	wsKey := flag.String("ws-key", "", "TLS 密钥文件路径")
+	flag.StringVar(&listen, "l", "", "监听地址 (简写)")
+	flag.StringVar(&listen, "listen", "", "监听地址")
+	flag.StringVar(&target, "t", "", "目标地址 (简写)")
+	flag.StringVar(&target, "target", "", "目标地址")
+	flag.StringVar(&password, "p", "SecureTunnel@2024", "加密密码 (简写)")
+	flag.StringVar(&password, "password", "SecureTunnel@2024", "加密密码")
 
-	configFile := flag.String("config", "", "配置文件路径")
-	deleteConfig := flag.Bool("delete-config", false, "启动后删除配置文件")
-	secureDelete := flag.Bool("secure-delete", false, "安全删除配置文件")
-	genConfig := flag.String("gen-config", "", "生成示例配置文件")
+	flag.BoolVar(&enableWS, "ws", false, "启用 WebSocket 传输模式")
+	flag.StringVar(&wsPath, "ws-path", "/ws", "WebSocket 路径")
+	flag.BoolVar(&wsTLS, "ws-tls", false, "启用 WebSocket TLS")
+	flag.StringVar(&wsCert, "ws-cert", "", "TLS 证书文件路径")
+	flag.StringVar(&wsKey, "ws-key", "", "TLS 密钥文件路径")
 
-	aclEnable := flag.Bool("acl", false, "启用访问控制")
-	aclMode := flag.String("acl-mode", "whitelist", "ACL 模式: whitelist 或 blacklist")
-	aclWhitelist := flag.String("acl-whitelist", "", "白名单")
-	aclBlacklist := flag.String("acl-blacklist", "", "黑名单")
+	flag.StringVar(&configFile, "c", "", "配置文件路径 (简写)")
+	flag.StringVar(&configFile, "config", "", "配置文件路径")
+	flag.BoolVar(&deleteConfig, "delete-config", false, "启动后删除配置文件")
+	flag.BoolVar(&secureDelete, "secure-delete", false, "安全删除配置文件")
+	flag.StringVar(&genConfig, "gen-config", "", "生成示例配置文件")
 
-	logPath := flag.String("log", "", "日志文件路径")
-	daemonMode := flag.Bool("daemon", false, "后台运行模式")
-	quiet := flag.Bool("quiet", false, "静默模式，不输出到终端")
+	flag.BoolVar(&aclEnable, "acl", false, "启用访问控制")
+	flag.StringVar(&aclMode, "acl-mode", "both", "ACL 模式: whitelist/blacklist/both")
+	flag.StringVar(&aclWhitelist, "acl-whitelist", "", "白名单 (逗号分隔)")
+	flag.StringVar(&aclBlacklist, "acl-blacklist", "", "黑名单 (逗号分隔)")
+
+	flag.StringVar(&logPath, "log", "", "日志文件路径")
+	flag.BoolVar(&daemonMode, "d", false, "后台运行模式 (简写)")
+	flag.BoolVar(&daemonMode, "daemon", false, "后台运行模式")
+	flag.BoolVar(&quiet, "q", false, "静默模式 (简写)")
+	flag.BoolVar(&quiet, "quiet", false, "静默模式，不输出到终端")
+	flag.BoolVar(&showVersion, "v", false, "显示版本信息")
+	flag.BoolVar(&showVersion, "version", false, "显示版本信息")
+	flag.BoolVar(&showHelp, "h", false, "显示帮助信息")
 
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "Usage: %s [options]\n\n", os.Args[0])
-		fmt.Fprintf(os.Stderr, "Options:\n")
+		fmt.Fprintf(os.Stderr, "CS_Tunnel Server v%s - C2 流量加密隧道\n\n", Version)
+		fmt.Fprintf(os.Stderr, "用法:\n")
+		fmt.Fprintf(os.Stderr, "  %s -l <监听地址> -t <目标地址> [选项]\n\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "快速示例:\n")
+		fmt.Fprintf(os.Stderr, "  %s -l 0.0.0.0:8888 -t 127.0.0.1:50050 -p mypass\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "  %s -l :8888 -t :50050 -ws                    # WebSocket模式\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "  %s -l :8888 -t :50050 -acl -acl-whitelist 10.0.0.0/8 -acl-blacklist 10.1.1.1\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "  %s -c server.yaml                            # 使用配置文件\n\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "选项:\n")
 		flag.PrintDefaults()
 	}
 
 	flag.Parse()
 
-	if *genConfig != "" {
-		cfg := config.GenerateServerExampleConfig()
-		if err := config.SaveConfig(cfg, *genConfig); err != nil {
-			fmt.Fprintf(os.Stderr, "生成配置文件失败: %v\n", err)
-			os.Exit(1)
-		}
-		fmt.Printf("示例配置文件已生成: %s\n", *genConfig)
+	if showHelp {
+		flag.Usage()
 		return
 	}
 
-	if *daemonMode {
+	if showVersion {
+		fmt.Printf("CS_Tunnel Server v%s\n", Version)
+		return
+	}
+
+	if genConfig != "" {
+		cfg := config.GenerateServerExampleConfig()
+		if err := config.SaveConfig(cfg, genConfig); err != nil {
+			fmt.Fprintf(os.Stderr, "生成配置文件失败: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("示例配置文件已生成: %s\n", genConfig)
+		return
+	}
+
+	if daemonMode {
 		if err := daemon.Daemonize(); err != nil {
 			fmt.Fprintf(os.Stderr, "后台运行失败: %v\n", err)
 			os.Exit(1)
@@ -67,40 +105,46 @@ func main() {
 		os.Exit(0)
 	}
 
-	if err := logger.InitLogger(*logPath, *quiet); err != nil {
+	if err := logger.InitLogger(logPath, quiet); err != nil {
 		fmt.Fprintf(os.Stderr, "初始化日志失败: %v\n", err)
 		os.Exit(1)
 	}
 	defer logger.Close()
 
-	if *configFile != "" {
-		runFromConfig(*configFile, *deleteConfig, *secureDelete)
+	if configFile != "" {
+		runFromConfig(configFile, deleteConfig, secureDelete)
 		return
 	}
 
+	if listen == "" || target == "" {
+		fmt.Fprintf(os.Stderr, "错误: 必须指定监听地址(-l)和目标地址(-t)\n\n")
+		fmt.Fprintf(os.Stderr, "快速示例:\n")
+		fmt.Fprintf(os.Stderr, "  %s -l 0.0.0.0:8888 -t 127.0.0.1:50050\n\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "使用 -h 查看帮助\n")
+		os.Exit(1)
+	}
+
 	wsConfig := transport.DefaultWSConfig()
-	wsConfig.Path = *wsPath
-	wsConfig.EnableTLS = *wsTLS
-	wsConfig.TLSCert = *wsCert
-	wsConfig.TLSKey = *wsKey
+	wsConfig.Path = wsPath
+	wsConfig.EnableTLS = wsTLS
+	wsConfig.TLSCert = wsCert
+	wsConfig.TLSKey = wsKey
 
 	aclConfig := acl.Config{
-		Enable: *aclEnable,
-		Mode:   *aclMode,
+		Enable: aclEnable,
+		Mode:   aclMode,
 	}
-	if *aclWhitelist != "" {
-		aclConfig.Whitelist = splitAndTrim(*aclWhitelist)
+	if aclWhitelist != "" {
+		aclConfig.Whitelist = splitAndTrim(aclWhitelist)
 	}
-	if *aclBlacklist != "" {
-		aclConfig.Blacklist = splitAndTrim(*aclBlacklist)
+	if aclBlacklist != "" {
+		aclConfig.Blacklist = splitAndTrim(aclBlacklist)
 	}
 
-	runServer(*listen, *target, *password, *enableWS, wsConfig, aclConfig)
+	runServer(listen, target, password, enableWS, wsConfig, aclConfig)
 }
 
 func runFromConfig(configPath string, deleteConf, secureDelete bool) {
-	logger.Printf("[Config] 加载配置文件: %s", configPath)
-
 	cfg, err := config.LoadConfig(configPath)
 	if err != nil {
 		logger.Fatalf("加载配置文件失败: %v", err)
@@ -109,6 +153,21 @@ func runFromConfig(configPath string, deleteConf, secureDelete bool) {
 	if cfg.Mode != "" && cfg.Mode != "server" {
 		logger.Fatalf("配置文件中的 mode 不是 server")
 	}
+
+	if cfg.Server.Daemon {
+		if err := daemon.Daemonize(); err != nil {
+			logger.Fatalf("后台运行失败: %v", err)
+		}
+		os.Exit(0)
+	}
+
+	if cfg.Server.LogPath != "" || cfg.Server.Quiet {
+		if err := logger.InitLogger(cfg.Server.LogPath, cfg.Server.Quiet); err != nil {
+			logger.Fatalf("初始化日志失败: %v", err)
+		}
+	}
+
+	logger.Printf("[Config] 加载配置文件: %s", configPath)
 
 	if deleteConf || secureDelete {
 		if secureDelete {
@@ -126,19 +185,6 @@ func runFromConfig(configPath string, deleteConf, secureDelete bool) {
 				logger.Printf("[Config] 配置文件已删除")
 			}
 		}
-	}
-
-	if cfg.Server.LogPath != "" || cfg.Server.Quiet {
-		if err := logger.InitLogger(cfg.Server.LogPath, cfg.Server.Quiet); err != nil {
-			logger.Fatalf("初始化日志失败: %v", err)
-		}
-	}
-
-	if cfg.Server.Daemon {
-		if err := daemon.Daemonize(); err != nil {
-			logger.Fatalf("后台运行失败: %v", err)
-		}
-		os.Exit(0)
 	}
 
 	wsConfig := transport.DefaultWSConfig()
@@ -159,13 +205,6 @@ func runFromConfig(configPath string, deleteConf, secureDelete bool) {
 }
 
 func runServer(listen, target, password string, enableWS bool, wsConfig transport.WSConfig, aclConfig acl.Config) {
-	if listen == "" {
-		logger.Fatal("请指定监听地址 (-listen)")
-	}
-	if target == "" {
-		logger.Fatal("请指定目标地址 (-target)")
-	}
-
 	cfg := server.Config{
 		ListenAddr:   listen,
 		TargetAddr:   target,
@@ -200,38 +239,14 @@ func splitAndTrim(s string) []string {
 	if s == "" {
 		return nil
 	}
-	parts := make([]string, 0)
-	for _, part := range splitString(s, ",") {
-		part = trimSpace(part)
+	parts := strings.Split(s, ",")
+	result := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
 		if part != "" {
-			parts = append(parts, part)
+			result = append(result, part)
 		}
 	}
-	return parts
-}
-
-func splitString(s, sep string) []string {
-	result := make([]string, 0)
-	start := 0
-	for i := 0; i < len(s); i++ {
-		if i+len(sep) <= len(s) && s[i:i+len(sep)] == sep {
-			result = append(result, s[start:i])
-			start = i + len(sep)
-		}
-	}
-	result = append(result, s[start:])
 	return result
-}
-
-func trimSpace(s string) string {
-	start := 0
-	end := len(s)
-	for start < end && (s[start] == ' ' || s[start] == '\t') {
-		start++
-	}
-	for end > start && (s[end-1] == ' ' || s[end-1] == '\t') {
-		end--
-	}
-	return s[start:end]
 }
 

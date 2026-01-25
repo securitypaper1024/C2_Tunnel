@@ -2,10 +2,11 @@ package acl
 
 import (
 	"fmt"
-	"tunnel/pkg/logger"
 	"net"
 	"strings"
 	"sync"
+
+	"tunnel/pkg/logger"
 )
 
 type Mode string
@@ -13,6 +14,7 @@ type Mode string
 const (
 	ModeWhitelist Mode = "whitelist"
 	ModeBlacklist Mode = "blacklist"
+	ModeBoth      Mode = "both"
 )
 
 type ACL struct {
@@ -54,8 +56,12 @@ func New(cfg Config) (*ACL, error) {
 		}
 	}
 
+	modeDesc := string(acl.mode)
+	if acl.mode == ModeBoth {
+		modeDesc = "both (黑名单优先)"
+	}
 	logger.Printf("[ACL] 初始化完成，模式: %s，白名单: %d 条，黑名单: %d 条",
-		acl.mode, len(acl.whitelist)+len(acl.whiteIPs), len(acl.blacklist)+len(acl.blackIPs))
+		modeDesc, len(acl.whitelist)+len(acl.whiteIPs), len(acl.blacklist)+len(acl.blackIPs))
 
 	return acl, nil
 }
@@ -132,6 +138,20 @@ func (a *ACL) IsAllowed(addr string) bool {
 			logger.Printf("[ACL] 拒绝访问 (在黑名单中): %s", addr)
 		}
 		return !blocked
+
+	case ModeBoth:
+		if a.isInBlacklist(ip) {
+			logger.Printf("[ACL] 拒绝访问 (在黑名单中): %s", addr)
+			return false
+		}
+		hasWhitelist := len(a.whitelist) > 0 || len(a.whiteIPs) > 0
+		if hasWhitelist {
+			if !a.isInWhitelist(ip) {
+				logger.Printf("[ACL] 拒绝访问 (不在白名单): %s", addr)
+				return false
+			}
+		}
+		return true
 
 	default:
 		return true

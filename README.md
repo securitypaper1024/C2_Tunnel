@@ -17,7 +17,14 @@
 
 ---
 
-## ✨ v1.3.0 新功能
+## ✨ v1.4.0 新功能
+
+- 🔧 **ACL 混合模式** - 支持黑白名单同时生效（黑名单优先），更灵活的访问控制
+- ⚡ **短参数别名** - 支持 `-l`、`-t`、`-s`、`-p`、`-d`、`-q`、`-v`、`-h` 等短参数，使用更便捷
+- 🐛 **Bug 修复** - 修复 daemon 模式无限循环、半关闭连接处理、配置文件删除时序等问题
+- 🚀 **性能优化** - TCP 连接调优、buffer 复用池、WebSocket 优雅关闭
+
+## ✨ v1.3.0 功能
 
 - 📝 **日志记录** - 支持将日志输出到文件，支持静默模式
 - 🔇 **后台运行** - 支持后台运行模式，不显示终端窗口，适合生产环境
@@ -105,11 +112,19 @@ GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o tunnel-client_linux ./cmd/c
 
 **Server 端：**
 ```bash
+# 使用短参数（推荐）
+./tunnel-server -l 0.0.0.0:8888 -t 127.0.0.1:50050 -p "YourPass"
+
+# 或使用完整参数
 ./tunnel-server -listen 0.0.0.0:8888 -target 127.0.0.1:50050 -password "YourPass"
 ```
 
 **Client 端：**
 ```bash
+# 使用短参数（推荐）
+./tunnel-client -l 127.0.0.1:443 -s vps.example.com:8888 -p "YourPass"
+
+# 或使用完整参数
 ./tunnel-client -listen 127.0.0.1:443 -server vps.example.com:8888 -password "YourPass"
 ```
 
@@ -117,24 +132,24 @@ GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o tunnel-client_linux ./cmd/c
 
 **后台运行并记录日志：**
 ```bash
-# Server 端后台运行
-./tunnel-server -listen 0.0.0.0:8888 -target 127.0.0.1:50050 -password "YourPass" \
-  -daemon -log /var/log/tunnel-server.log -quiet
+# Server 端后台运行（使用短参数）
+./tunnel-server -l 0.0.0.0:8888 -t 127.0.0.1:50050 -p "YourPass" \
+  -d -log /var/log/tunnel-server.log -q
 
-# Client 端后台运行
-./tunnel-client -listen 127.0.0.1:443 -server vps.example.com:8888 -password "YourPass" \
-  -daemon -log /var/log/tunnel-client.log -quiet
+# Client 端后台运行（使用短参数）
+./tunnel-client -l 127.0.0.1:443 -s vps.example.com:8888 -p "YourPass" \
+  -d -log /var/log/tunnel-client.log -q
 ```
 
 **仅记录日志（不后台运行）：**
 ```bash
 # 输出到终端和日志文件
-./tunnel-server -listen 0.0.0.0:8888 -target 127.0.0.1:50050 -password "YourPass" \
+./tunnel-server -l 0.0.0.0:8888 -t 127.0.0.1:50050 -p "YourPass" \
   -log /var/log/tunnel-server.log
 
 # 仅记录到日志文件（静默模式）
-./tunnel-server -listen 0.0.0.0:8888 -target 127.0.0.1:50050 -password "YourPass" \
-  -log /var/log/tunnel-server.log -quiet
+./tunnel-server -l 0.0.0.0:8888 -t 127.0.0.1:50050 -p "YourPass" \
+  -log /var/log/tunnel-server.log -q
 ```
 
 ---
@@ -158,7 +173,7 @@ GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o tunnel-client_linux ./cmd/c
 启动 Client 端，监听本地 443 端口，连接到 VPS 的 Server：
 
 ```bash
-./tunnel-client -listen 127.0.0.1:443 -server vps.example.com:8888 -password "YourPass" -ws
+./tunnel-client -l 127.0.0.1:443 -s vps.example.com:8888 -p "YourPass" -ws
 ```
 
 ![Client 端配置](assets/1767286555726-9131b1b4-049e-4ab3-812e-7ab3e2b7a3be.png)
@@ -168,7 +183,7 @@ GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o tunnel-client_linux ./cmd/c
 在 VPS 上启动 Server 端，监听 8888 端口，转发到本地 TeamServer：
 
 ```bash
-./tunnel-server -listen 0.0.0.0:8888 -target 127.0.0.1:50050 -password "YourPass" -ws
+./tunnel-server -l 0.0.0.0:8888 -t 127.0.0.1:50050 -p "YourPass" -ws
 ```
 
 ![Server 端配置](assets/1767286581044-5feb318f-2e55-4b31-a069-0af68516bcee.png)
@@ -237,13 +252,13 @@ server:
   # 访问控制
   acl:
     enable: true
-    mode: "whitelist"  # whitelist 或 blacklist
+    mode: "both"  # whitelist/blacklist/both (both=同时生效,黑名单优先)
     whitelist:
       - "192.168.1.0/24"
       - "10.0.0.0/8"
       - "127.0.0.1"
     blacklist:
-      - "192.168.1.100"
+      - "192.168.1.100"  # 即使在白名单范围内也会被拒绝
   
   # 日志和运行模式
   log_path: "/var/log/tunnel-server.log"  # 日志文件路径（可选）
@@ -278,14 +293,14 @@ client:
 
 ## 🛡️ IP 访问控制 (ACL)
 
-Server 端支持基于 IP 的访问控制，支持白名单和黑名单两种模式。
+Server 端支持基于 IP 的访问控制，支持白名单、黑名单和混合三种模式。
 
 ### 白名单模式
 
 只允许名单内的 IP 连接：
 
 ```bash
-tunnel-server -listen 0.0.0.0:8888 -target 127.0.0.1:50050 -password mypass \
+tunnel-server -l 0.0.0.0:8888 -t 127.0.0.1:50050 -p mypass \
   -acl -acl-mode whitelist -acl-whitelist "192.168.1.0/24,10.0.0.1,127.0.0.1"
 ```
 
@@ -294,8 +309,18 @@ tunnel-server -listen 0.0.0.0:8888 -target 127.0.0.1:50050 -password mypass \
 拒绝名单内的 IP 连接：
 
 ```bash
-tunnel-server -listen 0.0.0.0:8888 -target 127.0.0.1:50050 -password mypass \
+tunnel-server -l 0.0.0.0:8888 -t 127.0.0.1:50050 -p mypass \
   -acl -acl-mode blacklist -acl-blacklist "192.168.1.100,10.10.0.0/16"
+```
+
+### 混合模式 (v1.4.0 新增)
+
+黑白名单同时生效，黑名单优先。即使 IP 在白名单中，如果同时在黑名单中也会被拒绝：
+
+```bash
+# 允许 10.0.0.0/8 网段，但拒绝其中的 10.1.1.100
+tunnel-server -l 0.0.0.0:8888 -t 127.0.0.1:50050 -p mypass \
+  -acl -acl-mode both -acl-whitelist "10.0.0.0/8" -acl-blacklist "10.1.1.100"
 ```
 
 ### 支持的格式
@@ -312,12 +337,12 @@ tunnel-server -listen 0.0.0.0:8888 -target 127.0.0.1:50050 -password mypass \
 
 **Server 端：**
 ```bash
-./tunnel-server -listen 0.0.0.0:8888 -target 127.0.0.1:50050 -password "YourPass"
+./tunnel-server -l 0.0.0.0:8888 -t 127.0.0.1:50050 -p "YourPass"
 ```
 
 **Client 端：**
 ```bash
-./tunnel-client -listen 127.0.0.1:443 -server vps.example.com:8888 -password "YourPass"
+./tunnel-client -l 127.0.0.1:443 -s vps.example.com:8888 -p "YourPass"
 ```
 
 ### WebSocket 模式（流量伪装）
@@ -325,22 +350,22 @@ tunnel-server -listen 0.0.0.0:8888 -target 127.0.0.1:50050 -password mypass \
 **Server 端：**
 ```bash
 # 基础 WebSocket
-./tunnel-server -listen 0.0.0.0:80 -target 127.0.0.1:50050 -password "YourPass" \
+./tunnel-server -l 0.0.0.0:80 -t 127.0.0.1:50050 -p "YourPass" \
   -ws -ws-path /api/stream
 
 # WebSocket + TLS
-./tunnel-server -listen 0.0.0.0:443 -target 127.0.0.1:50050 -password "YourPass" \
+./tunnel-server -l 0.0.0.0:443 -t 127.0.0.1:50050 -p "YourPass" \
   -ws -ws-tls -ws-cert cert.pem -ws-key key.pem
 ```
 
 **Client 端：**
 ```bash
 # 基础 WebSocket
-./tunnel-client -listen 127.0.0.1:443 -server vps.com:80 -password "YourPass" \
+./tunnel-client -l 127.0.0.1:443 -s vps.com:80 -p "YourPass" \
   -ws -ws-path /api/stream
 
 # WebSocket + TLS
-./tunnel-client -listen 127.0.0.1:443 -server vps.com:443 -password "YourPass" \
+./tunnel-client -l 127.0.0.1:443 -s vps.com:443 -p "YourPass" \
   -ws -ws-tls -ws-skip-verify
 ```
 
@@ -349,17 +374,37 @@ tunnel-server -listen 0.0.0.0:8888 -target 127.0.0.1:50050 -password mypass \
 Client 端支持 HTTPS CONNECT 代理模式：
 
 ```bash
-./tunnel-client -listen 127.0.0.1:443 -server vps.example.com:8888 \
-  -password "YourPass" -https
+./tunnel-client -l 127.0.0.1:443 -s vps.example.com:8888 -p "YourPass" -https
 ```
 
 ---
 
-## 🎯 v1.3.0 代码优化说明
+## 🎯 版本更新说明
 
-本次更新对代码进行了全面优化，提升了工具的专业性和实用性：
+### v1.4.0 更新内容
 
-### 优化内容
+1. **ACL 混合模式**
+   - 新增 `both` 模式，支持黑白名单同时生效
+   - 黑名单优先：即使 IP 在白名单中，如果同时在黑名单中也会被拒绝
+   - 更灵活的访问控制策略
+
+2. **短参数别名**
+   - `-l` = `-listen`，`-t` = `-target`，`-s` = `-server`
+   - `-p` = `-password`，`-d` = `-daemon`，`-q` = `-quiet`
+   - `-v` = `-version`，`-h` = `-help`，`-c` = `-config`
+
+3. **Bug 修复**
+   - 修复 daemon 模式使用 `-d` 短参数时导致无限循环的问题
+   - 修复半关闭连接处理，使用 `CloseWrite()` 正确关闭 TCP 连接
+   - 修复配置文件删除与 daemon 模式的时序冲突问题
+   - 修复 WebSocket 桥接连接未正确关闭的问题
+
+4. **性能优化**
+   - 使用 `sync.Pool` 复用 buffer，减少内存分配
+   - TCP 连接调优：`SetNoDelay`、`SetKeepAlive` 优化网络性能
+   - WebSocket ping goroutine 优雅关闭机制
+
+### v1.3.0 更新内容
 
 1. **移除装饰性输出**
    - 删除了所有 ASCII 艺术字 banner
@@ -390,38 +435,40 @@ Client 端支持 HTTPS CONNECT 代理模式：
 
 ### Server 参数 (tunnel-server)
 
-| 参数 | 说明 | 默认值 | 必需 |
-|------|------|--------|------|
-| `-listen` | 监听地址 | - | ✅ |
-| `-target` | 目标地址 (如 TeamServer) | - | ✅ |
-| `-password` | 加密密码 | SecureTunnel@2024 | ❌ |
+| 参数 | 简写 | 说明 | 默认值 | 必需 |
+|------|------|------|--------|------|
+| `-listen` | `-l` | 监听地址 | - | ✅ |
+| `-target` | `-t` | 目标地址 (如 TeamServer) | - | ✅ |
+| `-password` | `-p` | 加密密码 | SecureTunnel@2024 | ❌ |
 
 ### Client 参数 (tunnel-client)
 
-| 参数 | 说明 | 默认值 | 必需 |
-|------|------|--------|------|
-| `-listen` | 本地监听地址 | - | ✅ |
-| `-server` | Server 端地址 | - | ✅ |
-| `-target` | 目标地址 (可选) | - | ❌ |
-| `-password` | 加密密码 | SecureTunnel@2024 | ❌ |
-| `-https` | 启用 HTTPS CONNECT 代理 | false | ❌ |
+| 参数 | 简写 | 说明 | 默认值 | 必需 |
+|------|------|------|--------|------|
+| `-listen` | `-l` | 本地监听地址 | - | ✅ |
+| `-server` | `-s` | Server 端地址 | - | ✅ |
+| `-target` | `-t` | 目标地址 (可选) | - | ❌ |
+| `-password` | `-p` | 加密密码 | SecureTunnel@2024 | ❌ |
+| `-https` | - | 启用 HTTPS CONNECT 代理 | false | ❌ |
 
 ### 配置文件参数
 
-| 参数 | 说明 |
-|------|------|
-| `-config` | 配置文件路径 (JSON/YAML) |
-| `-gen-config` | 生成示例配置文件 |
-| `-delete-config` | 启动后删除配置文件 |
-| `-secure-delete` | 安全删除 (覆写后删除) |
+| 参数 | 简写 | 说明 |
+|------|------|------|
+| `-config` | `-c` | 配置文件路径 (JSON/YAML) |
+| `-gen-config` | - | 生成示例配置文件 |
+| `-delete-config` | - | 启动后删除配置文件 |
+| `-secure-delete` | - | 安全删除 (覆写后删除) |
 
 ### 日志和运行模式参数
 
-| 参数 | 说明 | 默认值 |
-|------|------|--------|
-| `-log` | 日志文件路径 | - |
-| `-daemon` | 后台运行模式 | false |
-| `-quiet` | 静默模式，不输出到终端 | false |
+| 参数 | 简写 | 说明 | 默认值 |
+|------|------|------|--------|
+| `-log` | - | 日志文件路径 | - |
+| `-daemon` | `-d` | 后台运行模式 | false |
+| `-quiet` | `-q` | 静默模式，不输出到终端 | false |
+| `-version` | `-v` | 显示版本信息 | - |
+| `-help` | `-h` | 显示帮助信息 | - |
 
 ### WebSocket 参数
 
@@ -439,7 +486,7 @@ Client 端支持 HTTPS CONNECT 代理模式：
 | 参数 | 说明 | 默认值 |
 |------|------|--------|
 | `-acl` | 启用访问控制 | false |
-| `-acl-mode` | 模式 (whitelist/blacklist) | whitelist |
+| `-acl-mode` | 模式 (whitelist/blacklist/both) | both |
 | `-acl-whitelist` | 白名单 (逗号分隔) | - |
 | `-acl-blacklist` | 黑名单 (逗号分隔) | - |
 

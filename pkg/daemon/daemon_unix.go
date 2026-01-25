@@ -16,7 +16,7 @@ func Daemonize() error {
 
 	args := make([]string, 0)
 	for _, arg := range os.Args[1:] {
-		if arg == "-daemon" || arg == "--daemon" {
+		if arg == "-d" || arg == "-daemon" || arg == "--daemon" {
 			continue
 		}
 		args = append(args, arg)

@@ -5,15 +5,23 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
-	"tunnel/pkg/logger"
 	"net"
 	"net/http"
 	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
+
 	"tunnel/pkg/crypto"
+	"tunnel/pkg/logger"
 )
+
+var bufferPool = sync.Pool{
+	New: func() interface{} {
+		buf := make([]byte, 32*1024)
+		return &buf
+	},
+}
 
 type WSConfig struct {
 	Path            string
@@ -37,15 +45,18 @@ func DefaultWSConfig() WSConfig {
 }
 
 type WSConn struct {
-	conn   *websocket.Conn
-	cipher *crypto.AESCipher
-	mu     sync.Mutex
+	conn     *websocket.Conn
+	cipher   *crypto.AESCipher
+	mu       sync.Mutex
+	done     chan struct{}
+	closeOnce sync.Once
 }
 
 func NewWSConn(conn *websocket.Conn, cipher *crypto.AESCipher) *WSConn {
 	return &WSConn{
 		conn:   conn,
 		cipher: cipher,
+		done:   make(chan struct{}),
 	}
 }
 
@@ -78,6 +89,9 @@ func (w *WSConn) WriteEncrypted(data []byte) error {
 }
 
 func (w *WSConn) Close() error {
+	w.closeOnce.Do(func() {
+		close(w.done)
+	})
 	return w.conn.Close()
 }
 
@@ -90,13 +104,18 @@ func (w *WSConn) StartPing(interval time.Duration) {
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 
-		for range ticker.C {
-			w.mu.Lock()
-			err := w.conn.WriteControl(websocket.PingMessage, []byte{}, time.Now().Add(10*time.Second))
-			w.mu.Unlock()
-
-			if err != nil {
+		for {
+			select {
+			case <-w.done:
 				return
+			case <-ticker.C:
+				w.mu.Lock()
+				err := w.conn.WriteControl(websocket.PingMessage, []byte{}, time.Now().Add(10*time.Second))
+				w.mu.Unlock()
+
+				if err != nil {
+					return
+				}
 			}
 		}
 	}()
@@ -238,6 +257,11 @@ func BridgeWSToTCP(ws *WSConn, tcp net.Conn) {
 
 	go func() {
 		defer wg.Done()
+		defer func() {
+			if tcpConn, ok := tcp.(*net.TCPConn); ok {
+				tcpConn.CloseWrite()
+			}
+		}()
 		for {
 			data, err := ws.ReadEncrypted()
 			if err != nil {
@@ -255,7 +279,10 @@ func BridgeWSToTCP(ws *WSConn, tcp net.Conn) {
 
 	go func() {
 		defer wg.Done()
-		buf := make([]byte, 32*1024)
+		defer ws.Close()
+		bufPtr := bufferPool.Get().(*[]byte)
+		buf := *bufPtr
+		defer bufferPool.Put(bufPtr)
 		for {
 			n, err := tcp.Read(buf)
 			if err != nil {

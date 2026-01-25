@@ -98,17 +98,13 @@ func (c *CryptoConn) WriteEncrypted(data []byte) error {
 	}
 
 	length := len(encrypted)
-	lenBuf := []byte{
-		byte(length >> 24),
-		byte(length >> 16),
-		byte(length >> 8),
-		byte(length),
-	}
+	buf := make([]byte, 4+length)
+	buf[0] = byte(length >> 24)
+	buf[1] = byte(length >> 16)
+	buf[2] = byte(length >> 8)
+	buf[3] = byte(length)
+	copy(buf[4:], encrypted)
 
-	if _, err := c.Conn.Write(lenBuf); err != nil {
-		return err
-	}
-
-	_, err = c.Conn.Write(encrypted)
+	_, err = c.Conn.Write(buf)
 	return err
 }

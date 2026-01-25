@@ -1,27 +1,15 @@
-# SecureTunnel Client 配置文件示例
-# 使用方法: tunnel -config client.yaml
+# CS_Tunnel Client 配置文件
+# 用法: tunnel-client -c client.yaml
 
 mode: client
 
 client:
-  # 本地监听地址 (Beacon 连接到这里)
-  listen: "127.0.0.1:443"
-  
-  # Server 端地址
-  server: "vps.example.com:8888"
-  
-  # 目标地址 (可选，留空则使用 Server 配置的目标)
-  target: ""
-  
-  # 加密密码 (必须与 Server 端一致)
-  password: "YourSecurePassword@2024"
-  
-  # 是否启用 HTTPS CONNECT 代理模式
-  enable_https: false
-  
-  # WebSocket 配置
-  enable_ws: false
-  ws_path: "/ws"
-  ws_tls: false
-  ws_skip_verify: false
+  listen: "127.0.0.1:443"           # 本地监听地址
+  server: "vps.example.com:8888"    # Server 端地址
+  password: "YourSecurePassword"    # 加密密码 (必须与 Server 一致)
 
+  # 可选配置 (取消注释启用)
+  # enable_ws: true                 # 启用 WebSocket 模式
+  # ws_path: "/ws"                  # WebSocket 路径
+  # daemon: true                    # 后台运行
+  # log_path: "/var/log/client.log" # 日志文件
