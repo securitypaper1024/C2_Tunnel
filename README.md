@@ -1,18 +1,18 @@
 # C2_Tunnel
 
-一个基于 Go 的加密隧道工具，用于在 Client 与 Server 之间建立加密转发通道，支持 TCP 与 WebSocket（WS/WSS）传输，支持 ACL 访问控制。
+一个基于 Go 的加密隧道工具，用于在 Client 与 Server 之间建立安全转发通道，支持 TCP 与 WebSocket（WS/WSS）传输，并支持 ACL 访问控制。
 
-## 功能概览
+## 功能特性
 
 - AES-256-CFB 加密传输
-- 支持 TCP 隧道与 WebSocket 隧道
-- 支持 HTTPS CONNECT 代理场景（Client 端）
-- 支持 ACL 白名单/黑名单/混合模式（Server 端）
-- 支持配置文件（JSON / YAML）
-- 支持配置文件删除与安全删除
-- 支持 Server 端日志、静默模式、后台运行
+- TCP 隧道 / WebSocket 隧道
+- Client 支持 HTTPS CONNECT 代理场景
+- Server 支持 ACL：白名单 / 黑名单 / 混合模式
+- 支持 JSON / YAML 配置文件
+- 支持配置文件安全删除（`-secure-delete`）
+- Server 支持日志、静默、后台运行
 
-## 目录结构
+## 项目结构
 
 ```text
 cmd/
@@ -22,11 +22,13 @@ pkg/
   acl/           ACL 访问控制
   client/        Client 核心逻辑
   config/        配置加载与示例生成
-  crypto/        加密与加密连接封装
+  crypto/        加密与连接封装
   daemon/        后台运行支持
   logger/        日志模块
   server/        Server 核心逻辑
   transport/     WebSocket 传输层
+scripts/
+  e2e_local.go   本机端到端联调脚本
 ```
 
 ## 快速开始
@@ -58,7 +60,7 @@ go build -ldflags="-s -w" -o tunnel-client ./cmd/client
 ### TCP 模式
 
 - Client 监听本地端口，接收本地流量
-- 将流量加密后转发到 Server
+- 流量加密后转发至 Server
 - Server 解密后转发到目标地址
 
 ### WebSocket 模式
@@ -73,7 +75,7 @@ go build -ldflags="-s -w" -o tunnel-client ./cmd/client
 
 ## 命令行参数
 
-### Server 参数（`tunnel-server`）
+### Server（`tunnel-server`）
 
 - `-l, -listen`：监听地址（必填）
 - `-t, -target`：目标地址（必填）
@@ -84,41 +86,39 @@ go build -ldflags="-s -w" -o tunnel-client ./cmd/client
 - `-ws-cert`：TLS 证书路径
 - `-ws-key`：TLS 私钥路径
 - `-acl`：启用 ACL
-- `-acl-mode`：ACL 模式（`whitelist` / `blacklist` / `both`）
+- `-acl-mode`：`whitelist` / `blacklist` / `both`
 - `-acl-whitelist`：白名单（逗号分隔）
 - `-acl-blacklist`：黑名单（逗号分隔）
 - `-c, -config`：配置文件路径
-- `-delete-config`：启动后删除配置文件
 - `-secure-delete`：启动后安全删除配置文件
 - `-gen-config`：生成示例配置文件
 - `-log`：日志文件路径
 - `-d, -daemon`：后台运行
-- `-q, -quiet`：静默模式（不输出终端）
+- `-q, -quiet`：静默模式
 - `-v, -version`：显示版本
 - `-h`：帮助
 
-### Client 参数（`tunnel-client`）
+### Client（`tunnel-client`）
 
 - `-l, -listen`：监听地址（必填）
 - `-s, -server`：Server 地址（必填）
 - `-t, -target`：默认目标地址（可选）
 - `-p, -password`：加密密码
-- `-https`：启用 HTTPS CONNECT 代理模式
+- `-https`：启用 HTTPS CONNECT 模式
 - `-ws`：启用 WebSocket
 - `-ws-path`：WebSocket 路径（默认 `/ws`）
 - `-ws-tls`：启用 WSS
 - `-ws-skip-verify`：跳过证书校验
 - `-c, -config`：配置文件路径
-- `-delete-config`：启动后删除配置文件
 - `-secure-delete`：启动后安全删除配置文件
 - `-gen-config`：生成示例配置文件
 - `-d, -daemon`：后台运行
 - `-v, -version`：显示版本
 - `-h`：帮助
 
-## 配置文件
+## 配置文件示例
 
-### Server 示例（YAML）
+### Server（YAML）
 
 ```yaml
 mode: server
@@ -145,7 +145,7 @@ server:
   quiet: false
 ```
 
-### Client 示例（YAML）
+### Client（YAML）
 
 ```yaml
 mode: client
@@ -163,31 +163,51 @@ client:
   ws_tls: false
   ws_skip_verify: false
 
-  # 注意：当前版本 Client 已移除日志功能，以下字段保留但不生效
+  # 当前版本 Client 已移除日志功能，以下字段保留但不生效
   log_path: ""
   quiet: false
 
   daemon: false
 ```
 
+## 本机 E2E 联调
+
+已提供本机端到端联调脚本：`scripts/e2e_local.go`。
+
+脚本会自动完成：
+- 启动本地 echo 后端
+- 启动 tunnel server/client（TCP）并回环验证
+- 启动 tunnel server/client（WebSocket）并回环验证
+
+执行方式：
+
+```bash
+go run ./scripts/e2e_local.go
+```
+
+期望输出包含：
+- `[E2E] TCP case passed`
+- `[E2E] WS case passed`
+- `[E2E] all cases passed`
+
 ## 安全建议
 
-- 强密码并定期更换
+- 使用强密码并定期轮换
 - 公网部署优先使用 WSS（`-ws-tls`）
 - 为 Server 配置 ACL
-- 配置文件中避免明文长期保存敏感信息
-- 建议结合 `-secure-delete` 使用一次性配置文件
+- 避免长期明文保存敏感配置
+- 建议结合 `-secure-delete` 使用一次性配置
 
-## 近期维护更新（2026-03-19）
+## 最近更新（2026-03-19）
 
-- Client 端移除全部日志记录逻辑
-- Client 端移除日志相关参数：`-log`、`-q`、`-quiet`
-- 修复加密帧部分写入导致的协议不完整问题
-- 修复 WebSocket ACL 可被伪造请求头绕过的问题
-- ACL 模式新增严格校验，非法值改为拒绝
-- 修复 Client 双向转发可能卡住的连接回收问题
+- 仅保留 `-secure-delete`，移除 `-delete-config`
+- Client 端移除日志输出与日志参数
+- 修复加密帧部分写入风险
+- 修复 WebSocket ACL 头伪造绕过问题
+- ACL 模式增加严格校验（非法值拒绝）
+- 修复 Client 双向转发可能卡住的问题
 
-## 开发与验证
+## 开发验证
 
 ```bash
 go test ./...

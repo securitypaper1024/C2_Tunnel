@@ -21,7 +21,7 @@ func main() {
 	var https, enableWS, wsTLS, wsSkipVerify bool
 	var wsPath string
 	var configFile string
-	var deleteConfig, secureDelete, daemonMode, showVersion, showHelp bool
+	var secureDelete, daemonMode, showVersion, showHelp bool
 	var genConfig string
 
 	flag.StringVar(&listen, "l", "", "listen address (short)")
@@ -41,7 +41,6 @@ func main() {
 
 	flag.StringVar(&configFile, "c", "", "config file path (short)")
 	flag.StringVar(&configFile, "config", "", "config file path")
-	flag.BoolVar(&deleteConfig, "delete-config", false, "delete config file after startup")
 	flag.BoolVar(&secureDelete, "secure-delete", false, "secure delete config file")
 	flag.StringVar(&genConfig, "gen-config", "", "generate sample config file")
 
@@ -94,7 +93,7 @@ func main() {
 	}
 
 	if configFile != "" {
-		runFromConfig(configFile, deleteConfig, secureDelete)
+		runFromConfig(configFile, secureDelete)
 		return
 	}
 
@@ -114,7 +113,7 @@ func main() {
 	runClient(listen, serverAddr, target, password, https, enableWS, wsConfig)
 }
 
-func runFromConfig(configPath string, deleteConf, secureDelete bool) {
+func runFromConfig(configPath string, secureDelete bool) {
 	cfg, err := config.LoadConfig(configPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to load config file: %v\n", err)
@@ -134,15 +133,9 @@ func runFromConfig(configPath string, deleteConf, secureDelete bool) {
 		os.Exit(0)
 	}
 
-	if deleteConf || secureDelete {
-		if secureDelete {
-			if err := config.SecureDeleteConfigFile(configPath); err != nil {
-				fmt.Fprintf(os.Stderr, "failed to secure delete config file: %v\n", err)
-			}
-		} else {
-			if err := config.DeleteConfigFile(configPath); err != nil {
-				fmt.Fprintf(os.Stderr, "failed to delete config file: %v\n", err)
-			}
+	if secureDelete {
+		if err := config.SecureDeleteConfigFile(configPath); err != nil {
+			fmt.Fprintf(os.Stderr, "failed to secure delete config file: %v\n", err)
 		}
 	}
 
