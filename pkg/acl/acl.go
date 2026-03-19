@@ -35,9 +35,19 @@ type Config struct {
 }
 
 func New(cfg Config) (*ACL, error) {
+	mode := Mode(strings.ToLower(strings.TrimSpace(cfg.Mode)))
+	if mode == "" {
+		mode = ModeBoth
+	}
+	switch mode {
+	case ModeWhitelist, ModeBlacklist, ModeBoth:
+	default:
+		return nil, fmt.Errorf("invalid acl mode: %s", cfg.Mode)
+	}
+
 	acl := &ACL{
 		enabled: cfg.Enable,
-		mode:    Mode(cfg.Mode),
+		mode:    mode,
 	}
 
 	if !cfg.Enable {
@@ -154,7 +164,7 @@ func (a *ACL) IsAllowed(addr string) bool {
 		return true
 
 	default:
-		return true
+		return false
 	}
 }
 

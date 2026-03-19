@@ -563,3 +563,22 @@ Client 端支持 HTTPS CONNECT 代理模式：
 ---
 
 **⚠️ 免责声明：** 本工具仅供安全研究和合法授权测试使用。使用者需自行承担使用本工具所产生的所有法律责任。
+
+---
+
+## 2026-03-19 Maintenance Update
+
+### Client behavior changes
+- Removed all client-side logging output and logging initialization.
+- Removed client logging CLI flags: `-log`, `-q`, `-quiet`.
+- Running client from config no longer uses `client.log_path` / `client.quiet`.
+
+### Security and reliability fixes
+1. Fixed encrypted frame partial-write risk by ensuring full writes in `CryptoConn.WriteEncrypted`.
+2. Hardened WebSocket ACL source IP logic to use `RemoteAddr` only (prevents forged header bypass).
+3. Added strict ACL mode validation (`whitelist` / `blacklist` / `both`) and switched invalid mode behavior to fail-closed.
+4. Fixed potential client forwarding goroutine hang by adding coordinated connection shutdown on either side exit.
+
+### Verification
+- `go test ./...` passed
+- `go vet ./...` passed

@@ -11,7 +11,6 @@ import (
 	"tunnel/pkg/client"
 	"tunnel/pkg/config"
 	"tunnel/pkg/daemon"
-	"tunnel/pkg/logger"
 	"tunnel/pkg/transport"
 )
 
@@ -21,49 +20,46 @@ func main() {
 	var listen, target, serverAddr, password string
 	var https, enableWS, wsTLS, wsSkipVerify bool
 	var wsPath string
-	var configFile, logPath string
-	var deleteConfig, secureDelete, daemonMode, quiet, showVersion, showHelp bool
+	var configFile string
+	var deleteConfig, secureDelete, daemonMode, showVersion, showHelp bool
 	var genConfig string
 
-	flag.StringVar(&listen, "l", "", "监听地址 (简写)")
-	flag.StringVar(&listen, "listen", "", "监听地址")
-	flag.StringVar(&target, "t", "", "目标地址 (简写)")
-	flag.StringVar(&target, "target", "", "目标地址")
-	flag.StringVar(&serverAddr, "s", "", "Server 端地址 (简写)")
-	flag.StringVar(&serverAddr, "server", "", "Server 端地址")
-	flag.StringVar(&password, "p", "SecureTunnel@2024", "加密密码 (简写)")
-	flag.StringVar(&password, "password", "SecureTunnel@2024", "加密密码")
-	flag.BoolVar(&https, "https", false, "启用 HTTPS CONNECT 代理模式")
+	flag.StringVar(&listen, "l", "", "listen address (short)")
+	flag.StringVar(&listen, "listen", "", "listen address")
+	flag.StringVar(&target, "t", "", "target address (short)")
+	flag.StringVar(&target, "target", "", "target address")
+	flag.StringVar(&serverAddr, "s", "", "server address (short)")
+	flag.StringVar(&serverAddr, "server", "", "server address")
+	flag.StringVar(&password, "p", "SecureTunnel@2024", "encryption password (short)")
+	flag.StringVar(&password, "password", "SecureTunnel@2024", "encryption password")
+	flag.BoolVar(&https, "https", false, "enable HTTPS CONNECT proxy mode")
 
-	flag.BoolVar(&enableWS, "ws", false, "启用 WebSocket 传输模式")
-	flag.StringVar(&wsPath, "ws-path", "/ws", "WebSocket 路径")
-	flag.BoolVar(&wsTLS, "ws-tls", false, "启用 WebSocket TLS")
-	flag.BoolVar(&wsSkipVerify, "ws-skip-verify", false, "跳过 TLS 证书验证")
+	flag.BoolVar(&enableWS, "ws", false, "enable WebSocket transport")
+	flag.StringVar(&wsPath, "ws-path", "/ws", "WebSocket path")
+	flag.BoolVar(&wsTLS, "ws-tls", false, "enable WebSocket TLS")
+	flag.BoolVar(&wsSkipVerify, "ws-skip-verify", false, "skip TLS certificate verify")
 
-	flag.StringVar(&configFile, "c", "", "配置文件路径 (简写)")
-	flag.StringVar(&configFile, "config", "", "配置文件路径")
-	flag.BoolVar(&deleteConfig, "delete-config", false, "启动后删除配置文件")
-	flag.BoolVar(&secureDelete, "secure-delete", false, "安全删除配置文件")
-	flag.StringVar(&genConfig, "gen-config", "", "生成示例配置文件")
+	flag.StringVar(&configFile, "c", "", "config file path (short)")
+	flag.StringVar(&configFile, "config", "", "config file path")
+	flag.BoolVar(&deleteConfig, "delete-config", false, "delete config file after startup")
+	flag.BoolVar(&secureDelete, "secure-delete", false, "secure delete config file")
+	flag.StringVar(&genConfig, "gen-config", "", "generate sample config file")
 
-	flag.StringVar(&logPath, "log", "", "日志文件路径")
-	flag.BoolVar(&daemonMode, "d", false, "后台运行模式 (简写)")
-	flag.BoolVar(&daemonMode, "daemon", false, "后台运行模式")
-	flag.BoolVar(&quiet, "q", false, "静默模式 (简写)")
-	flag.BoolVar(&quiet, "quiet", false, "静默模式，不输出到终端")
-	flag.BoolVar(&showVersion, "v", false, "显示版本信息")
-	flag.BoolVar(&showVersion, "version", false, "显示版本信息")
-	flag.BoolVar(&showHelp, "h", false, "显示帮助信息")
+	flag.BoolVar(&daemonMode, "d", false, "daemon mode (short)")
+	flag.BoolVar(&daemonMode, "daemon", false, "daemon mode")
+	flag.BoolVar(&showVersion, "v", false, "show version")
+	flag.BoolVar(&showVersion, "version", false, "show version")
+	flag.BoolVar(&showHelp, "h", false, "show help")
 
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "CS_Tunnel Client v%s - C2 流量加密隧道\n\n", Version)
-		fmt.Fprintf(os.Stderr, "用法:\n")
-		fmt.Fprintf(os.Stderr, "  %s -l <监听地址> -s <服务器地址> [选项]\n\n", os.Args[0])
-		fmt.Fprintf(os.Stderr, "快速示例:\n")
+		fmt.Fprintf(os.Stderr, "CS_Tunnel Client v%s - C2 encrypted tunnel\n\n", Version)
+		fmt.Fprintf(os.Stderr, "Usage:\n")
+		fmt.Fprintf(os.Stderr, "  %s -l <listen_addr> -s <server_addr> [options]\n\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "Quick examples:\n")
 		fmt.Fprintf(os.Stderr, "  %s -l 127.0.0.1:443 -s vps.example.com:8888 -p mypass\n", os.Args[0])
-		fmt.Fprintf(os.Stderr, "  %s -l :443 -s vps:8888 -ws              # WebSocket模式\n", os.Args[0])
-		fmt.Fprintf(os.Stderr, "  %s -c client.yaml                       # 使用配置文件\n\n", os.Args[0])
-		fmt.Fprintf(os.Stderr, "选项:\n")
+		fmt.Fprintf(os.Stderr, "  %s -l :443 -s vps:8888 -ws\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "  %s -c client.yaml\n\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "Options:\n")
 		flag.PrintDefaults()
 	}
 
@@ -82,26 +78,20 @@ func main() {
 	if genConfig != "" {
 		cfg := config.GenerateClientExampleConfig()
 		if err := config.SaveConfig(cfg, genConfig); err != nil {
-			fmt.Fprintf(os.Stderr, "生成配置文件失败: %v\n", err)
+			fmt.Fprintf(os.Stderr, "failed to generate config file: %v\n", err)
 			os.Exit(1)
 		}
-		fmt.Printf("示例配置文件已生成: %s\n", genConfig)
+		fmt.Printf("sample config file generated: %s\n", genConfig)
 		return
 	}
 
 	if daemonMode {
 		if err := daemon.Daemonize(); err != nil {
-			fmt.Fprintf(os.Stderr, "后台运行失败: %v\n", err)
+			fmt.Fprintf(os.Stderr, "daemonize failed: %v\n", err)
 			os.Exit(1)
 		}
 		os.Exit(0)
 	}
-
-	if err := logger.InitLogger(logPath, quiet); err != nil {
-		fmt.Fprintf(os.Stderr, "初始化日志失败: %v\n", err)
-		os.Exit(1)
-	}
-	defer logger.Close()
 
 	if configFile != "" {
 		runFromConfig(configFile, deleteConfig, secureDelete)
@@ -109,10 +99,10 @@ func main() {
 	}
 
 	if listen == "" || serverAddr == "" {
-		fmt.Fprintf(os.Stderr, "错误: 必须指定监听地址(-l)和服务器地址(-s)\n\n")
-		fmt.Fprintf(os.Stderr, "快速示例:\n")
+		fmt.Fprintf(os.Stderr, "error: must provide listen (-l) and server (-s)\n\n")
+		fmt.Fprintf(os.Stderr, "quick example:\n")
 		fmt.Fprintf(os.Stderr, "  %s -l 127.0.0.1:443 -s vps.example.com:8888\n\n", os.Args[0])
-		fmt.Fprintf(os.Stderr, "使用 -h 查看帮助\n")
+		fmt.Fprintf(os.Stderr, "use -h for help\n")
 		os.Exit(1)
 	}
 
@@ -127,42 +117,31 @@ func main() {
 func runFromConfig(configPath string, deleteConf, secureDelete bool) {
 	cfg, err := config.LoadConfig(configPath)
 	if err != nil {
-		logger.Fatalf("加载配置文件失败: %v", err)
+		fmt.Fprintf(os.Stderr, "failed to load config file: %v\n", err)
+		os.Exit(1)
 	}
 
 	if cfg.Mode != "" && cfg.Mode != "client" {
-		logger.Fatalf("配置文件中的 mode 不是 client")
+		fmt.Fprintln(os.Stderr, "the mode in config file is not client")
+		os.Exit(1)
 	}
 
 	if cfg.Client.Daemon {
 		if err := daemon.Daemonize(); err != nil {
-			logger.Fatalf("后台运行失败: %v", err)
+			fmt.Fprintf(os.Stderr, "daemonize failed: %v\n", err)
+			os.Exit(1)
 		}
 		os.Exit(0)
 	}
 
-	if cfg.Client.LogPath != "" || cfg.Client.Quiet {
-		if err := logger.InitLogger(cfg.Client.LogPath, cfg.Client.Quiet); err != nil {
-			logger.Fatalf("初始化日志失败: %v", err)
-		}
-	}
-
-	logger.Printf("[Config] 加载配置文件: %s", configPath)
-
 	if deleteConf || secureDelete {
 		if secureDelete {
-			logger.Printf("[Config] 安全删除配置文件...")
 			if err := config.SecureDeleteConfigFile(configPath); err != nil {
-				logger.Printf("[Config] 安全删除失败: %v", err)
-			} else {
-				logger.Printf("[Config] 配置文件已安全删除")
+				fmt.Fprintf(os.Stderr, "failed to secure delete config file: %v\n", err)
 			}
 		} else {
-			logger.Printf("[Config] 删除配置文件...")
 			if err := config.DeleteConfigFile(configPath); err != nil {
-				logger.Printf("[Config] 删除失败: %v", err)
-			} else {
-				logger.Printf("[Config] 配置文件已删除")
+				fmt.Fprintf(os.Stderr, "failed to delete config file: %v\n", err)
 			}
 		}
 	}
@@ -191,20 +170,20 @@ func runClient(listen, serverAddr, target, password string, https, enableWS bool
 
 	cli, err := client.New(cfg)
 	if err != nil {
-		logger.Fatalf("创建 Client 失败: %v", err)
+		fmt.Fprintf(os.Stderr, "failed to create client: %v\n", err)
+		os.Exit(1)
 	}
 
 	go func() {
 		sigChan := make(chan os.Signal, 1)
 		signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 		<-sigChan
-		logger.Println("正在关闭 Client...")
 		cli.Stop()
 		os.Exit(0)
 	}()
 
 	if err := cli.Start(); err != nil {
-		logger.Fatalf("Client 启动失败: %v", err)
+		fmt.Fprintf(os.Stderr, "client start failed: %v\n", err)
+		os.Exit(1)
 	}
 }
-

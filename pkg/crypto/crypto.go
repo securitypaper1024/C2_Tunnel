@@ -105,6 +105,15 @@ func (c *CryptoConn) WriteEncrypted(data []byte) error {
 	buf[3] = byte(length)
 	copy(buf[4:], encrypted)
 
-	_, err = c.Conn.Write(buf)
-	return err
+	for written := 0; written < len(buf); {
+		n, err := c.Conn.Write(buf[written:])
+		if err != nil {
+			return err
+		}
+		if n <= 0 {
+			return io.ErrUnexpectedEOF
+		}
+		written += n
+	}
+	return nil
 }
