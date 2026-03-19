@@ -20,7 +20,7 @@ import (
 const Version = "1.4.0"
 
 func main() {
-	var listen, target, password string
+	var listen, target, password, protocol string
 	var enableWS, wsTLS bool
 	var wsPath, wsCert, wsKey string
 	var configFile, logPath string
@@ -35,6 +35,7 @@ func main() {
 	flag.StringVar(&target, "target", "", "鐩爣鍦板潃")
 	flag.StringVar(&password, "p", "SecureTunnel@2024", "鍔犲瘑瀵嗙爜 (绠€鍐?")
 	flag.StringVar(&password, "password", "SecureTunnel@2024", "鍔犲瘑瀵嗙爜")
+	flag.StringVar(&protocol, "protocol", "tcp", "tunnel protocol: tcp|udp")
 
 	flag.BoolVar(&enableWS, "ws", false, "鍚敤 WebSocket 浼犺緭妯″紡")
 	flag.StringVar(&wsPath, "ws-path", "/ws", "WebSocket 璺緞")
@@ -140,7 +141,7 @@ func main() {
 		aclConfig.Blacklist = splitAndTrim(aclBlacklist)
 	}
 
-	runServer(listen, target, password, enableWS, wsConfig, aclConfig)
+	runServer(listen, target, protocol, password, enableWS, wsConfig, aclConfig)
 }
 
 func runFromConfig(configPath string, secureDelete bool) {
@@ -190,14 +191,20 @@ func runFromConfig(configPath string, secureDelete bool) {
 		Blacklist: cfg.Server.ACL.Blacklist,
 	}
 
-	runServer(cfg.Server.Listen, cfg.Server.Target, cfg.Server.Password,
+	proto := cfg.Server.Protocol
+	if proto == "" {
+		proto = "tcp"
+	}
+
+	runServer(cfg.Server.Listen, cfg.Server.Target, proto, cfg.Server.Password,
 		cfg.Server.EnableWS, wsConfig, aclConfig)
 }
 
-func runServer(listen, target, password string, enableWS bool, wsConfig transport.WSConfig, aclConfig acl.Config) {
+func runServer(listen, target, protocol, password string, enableWS bool, wsConfig transport.WSConfig, aclConfig acl.Config) {
 	cfg := server.Config{
 		ListenAddr:   listen,
 		TargetAddr:   target,
+		Protocol:     protocol,
 		Password:     password,
 		ReadTimeout:  30 * time.Second,
 		WriteTimeout: 30 * time.Second,

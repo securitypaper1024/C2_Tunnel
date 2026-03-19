@@ -18,6 +18,7 @@ type Config struct {
 type ServerConfig struct {
 	Listen   string `json:"listen" yaml:"listen"`
 	Target   string `json:"target" yaml:"target"`
+	Protocol string `json:"protocol" yaml:"protocol"`
 	Password string `json:"password" yaml:"password"`
 
 	EnableWS bool   `json:"enable_ws" yaml:"enable_ws"`
@@ -37,6 +38,7 @@ type ClientConfig struct {
 	Listen   string `json:"listen" yaml:"listen"`
 	Server   string `json:"server" yaml:"server"`
 	Target   string `json:"target" yaml:"target"`
+	Protocol string `json:"protocol" yaml:"protocol"`
 	Password string `json:"password" yaml:"password"`
 
 	EnableHTTPS bool `json:"enable_https" yaml:"enable_https"`
@@ -130,6 +132,7 @@ func DefaultServerConfig() ServerConfig {
 	return ServerConfig{
 		Listen:   "0.0.0.0:8888",
 		Target:   "127.0.0.1:50050",
+		Protocol: "tcp",
 		Password: "SecureTunnel@2024",
 		WSPath:   "/ws",
 		ACL: ACLConfig{
@@ -142,6 +145,7 @@ func DefaultServerConfig() ServerConfig {
 func DefaultClientConfig() ClientConfig {
 	return ClientConfig{
 		Listen:   "127.0.0.1:443",
+		Protocol: "tcp",
 		Password: "SecureTunnel@2024",
 		WSPath:   "/ws",
 	}
@@ -153,6 +157,7 @@ func GenerateExampleConfig() *Config {
 		Server: ServerConfig{
 			Listen:   "0.0.0.0:8888",
 			Target:   "127.0.0.1:50050",
+			Protocol: "tcp",
 			Password: "YourSecurePassword@2024",
 			EnableWS: false,
 			WSPath:   "/ws",
@@ -173,6 +178,7 @@ func GenerateExampleConfig() *Config {
 		Client: ClientConfig{
 			Listen:      "127.0.0.1:443",
 			Server:      "vps.example.com:8888",
+			Protocol:    "tcp",
 			Password:    "YourSecurePassword@2024",
 			EnableHTTPS: false,
 			EnableWS:    false,
@@ -187,6 +193,7 @@ func GenerateServerExampleConfig() *Config {
 		Server: ServerConfig{
 			Listen:   "0.0.0.0:8888",
 			Target:   "127.0.0.1:50050",
+			Protocol: "tcp",
 			Password: "YourSecurePassword",
 		},
 	}
@@ -198,6 +205,7 @@ func GenerateClientExampleConfig() *Config {
 		Client: ClientConfig{
 			Listen:   "127.0.0.1:443",
 			Server:   "vps.example.com:8888",
+			Protocol: "tcp",
 			Password: "YourSecurePassword",
 		},
 	}
@@ -209,6 +217,7 @@ func GenerateServerFullConfig() *Config {
 		Server: ServerConfig{
 			Listen:   "0.0.0.0:8888",
 			Target:   "127.0.0.1:50050",
+			Protocol: "tcp",
 			Password: "YourSecurePassword",
 			EnableWS: false,
 			WSPath:   "/ws",
@@ -233,6 +242,7 @@ func GenerateClientFullConfig() *Config {
 		Client: ClientConfig{
 			Listen:   "127.0.0.1:443",
 			Server:   "vps.example.com:8888",
+			Protocol: "tcp",
 			Password: "YourSecurePassword",
 			EnableWS: false,
 			WSPath:   "/ws",

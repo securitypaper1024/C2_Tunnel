@@ -17,7 +17,7 @@ import (
 const Version = "1.4.0"
 
 func main() {
-	var listen, target, serverAddr, password string
+	var listen, target, serverAddr, password, protocol string
 	var https, enableWS, wsTLS, wsSkipVerify bool
 	var wsPath string
 	var configFile string
@@ -32,6 +32,7 @@ func main() {
 	flag.StringVar(&serverAddr, "server", "", "server address")
 	flag.StringVar(&password, "p", "SecureTunnel@2024", "encryption password (short)")
 	flag.StringVar(&password, "password", "SecureTunnel@2024", "encryption password")
+	flag.StringVar(&protocol, "protocol", "tcp", "tunnel protocol: tcp|udp")
 	flag.BoolVar(&https, "https", false, "enable HTTPS CONNECT proxy mode")
 
 	flag.BoolVar(&enableWS, "ws", false, "enable WebSocket transport")
@@ -110,7 +111,7 @@ func main() {
 	wsConfig.EnableTLS = wsTLS
 	wsConfig.SkipVerify = wsSkipVerify
 
-	runClient(listen, serverAddr, target, password, https, enableWS, wsConfig)
+	runClient(listen, serverAddr, target, protocol, password, https, enableWS, wsConfig)
 }
 
 func runFromConfig(configPath string, secureDelete bool) {
@@ -144,15 +145,21 @@ func runFromConfig(configPath string, secureDelete bool) {
 	wsConfig.EnableTLS = cfg.Client.WSTLS
 	wsConfig.SkipVerify = cfg.Client.WSSkipVerify
 
-	runClient(cfg.Client.Listen, cfg.Client.Server, cfg.Client.Target,
+	proto := cfg.Client.Protocol
+	if proto == "" {
+		proto = "tcp"
+	}
+
+	runClient(cfg.Client.Listen, cfg.Client.Server, cfg.Client.Target, proto,
 		cfg.Client.Password, cfg.Client.EnableHTTPS, cfg.Client.EnableWS, wsConfig)
 }
 
-func runClient(listen, serverAddr, target, password string, https, enableWS bool, wsConfig transport.WSConfig) {
+func runClient(listen, serverAddr, target, protocol, password string, https, enableWS bool, wsConfig transport.WSConfig) {
 	cfg := client.Config{
 		ListenAddr:   listen,
 		ServerAddr:   serverAddr,
 		TargetAddr:   target,
+		Protocol:     protocol,
 		Password:     password,
 		EnableHTTPS:  https,
 		ReadTimeout:  30 * time.Second,

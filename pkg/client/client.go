@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"tunnel/pkg/crypto"
@@ -25,6 +26,7 @@ type Config struct {
 	ListenAddr   string
 	ServerAddr   string
 	TargetAddr   string
+	Protocol     string
 	Password     string
 	EnableHTTPS  bool
 	ReadTimeout  time.Duration
@@ -38,6 +40,7 @@ type Client struct {
 	config   Config
 	cipher   *crypto.AESCipher
 	ln       net.Listener
+	udpConn  *net.UDPConn
 	wsClient *transport.WSClient
 }
 
@@ -60,6 +63,20 @@ func New(config Config) (*Client, error) {
 }
 
 func (c *Client) Start() error {
+	switch normalizeProtocol(c.config.Protocol) {
+	case "tcp":
+		return c.startTCP()
+	case "udp":
+		if c.config.EnableHTTPS {
+			return fmt.Errorf("https mode is not supported with udp protocol")
+		}
+		return c.startUDP()
+	default:
+		return fmt.Errorf("unsupported protocol: %s", c.config.Protocol)
+	}
+}
+
+func (c *Client) startTCP() error {
 	ln, err := net.Listen("tcp", c.config.ListenAddr)
 	if err != nil {
 		return fmt.Errorf("failed to listen: %w", err)
@@ -80,6 +97,9 @@ func (c *Client) Start() error {
 }
 
 func (c *Client) Stop() error {
+	if c.udpConn != nil {
+		return c.udpConn.Close()
+	}
 	if c.ln != nil {
 		return c.ln.Close()
 	}
@@ -121,7 +141,12 @@ func (c *Client) handleWSConnection(ownerConn net.Conn, targetAddr string, initi
 	}
 	defer wsConn.Close()
 
-	if err := wsConn.WriteEncrypted([]byte(targetAddr)); err != nil {
+	tunnelTarget := targetAddr
+	if normalizeProtocol(c.config.Protocol) == "udp" {
+		tunnelTarget = "UDP:" + targetAddr
+	}
+
+	if err := wsConn.WriteEncrypted([]byte(tunnelTarget)); err != nil {
 		return
 	}
 
@@ -203,7 +228,12 @@ func (c *Client) handleTCPConnection(ownerConn net.Conn, targetAddr string, init
 
 	cryptoConn := crypto.NewCryptoConn(serverConn, c.cipher)
 
-	if err := cryptoConn.WriteEncrypted([]byte(targetAddr)); err != nil {
+	tunnelTarget := targetAddr
+	if normalizeProtocol(c.config.Protocol) == "udp" {
+		tunnelTarget = "UDP:" + targetAddr
+	}
+
+	if err := cryptoConn.WriteEncrypted([]byte(tunnelTarget)); err != nil {
 		return
 	}
 
@@ -319,4 +349,56 @@ func (c *Client) forwardFromServer(src *crypto.CryptoConn, dst net.Conn) {
 			return
 		}
 	}
+}
+
+type udpSession struct {
+	remote    *net.UDPAddr
+	sendCh    chan []byte
+	done      chan struct{}
+	onClose   func()
+	closeOnce sync.Once
+	lastSeen  int64
+}
+
+func (s *udpSession) touch() {
+	atomic.StoreInt64(&s.lastSeen, time.Now().UnixNano())
+}
+
+func (s *udpSession) expired(d time.Duration) bool {
+	last := atomic.LoadInt64(&s.lastSeen)
+	return time.Since(time.Unix(0, last)) > d
+}
+
+func (s *udpSession) send(payload []byte) bool {
+	select {
+	case <-s.done:
+		return false
+	default:
+	}
+	select {
+	case s.sendCh <- payload:
+		return true
+	case <-s.done:
+		return false
+	default:
+		return false
+	}
+}
+
+func (s *udpSession) close() {
+	s.closeOnce.Do(func() {
+		close(s.done)
+		close(s.sendCh)
+		if s.onClose != nil {
+			s.onClose()
+		}
+	})
+}
+
+func normalizeProtocol(v string) string {
+	p := strings.ToLower(strings.TrimSpace(v))
+	if p == "" {
+		return "tcp"
+	}
+	return p
 }

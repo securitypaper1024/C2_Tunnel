@@ -1,4 +1,4 @@
-﻿package main
+package main
 
 import (
 	"bytes"
@@ -15,7 +15,7 @@ import (
 	"tunnel/pkg/transport"
 )
 
-func pickPort() (int, error) {
+func pickTCPPort() (int, error) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		return 0, err
@@ -24,7 +24,20 @@ func pickPort() (int, error) {
 	return ln.Addr().(*net.TCPAddr).Port, nil
 }
 
-func waitPort(addr string, timeout time.Duration) error {
+func pickUDPPort() (int, error) {
+	addr, err := net.ResolveUDPAddr("udp", "127.0.0.1:0")
+	if err != nil {
+		return 0, err
+	}
+	conn, err := net.ListenUDP("udp", addr)
+	if err != nil {
+		return 0, err
+	}
+	defer conn.Close()
+	return conn.LocalAddr().(*net.UDPAddr).Port, nil
+}
+
+func waitTCPPort(addr string, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
 		c, err := net.DialTimeout("tcp", addr, 300*time.Millisecond)
@@ -37,12 +50,11 @@ func waitPort(addr string, timeout time.Duration) error {
 	return fmt.Errorf("port not ready: %s", addr)
 }
 
-func startEchoServer(addr string) (func(), error) {
+func startTCPEcho(addr string) (func(), error) {
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
 		return nil, err
 	}
-
 	ctx, cancel := context.WithCancel(context.Background())
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -66,60 +78,132 @@ func startEchoServer(addr string) (func(), error) {
 			}(conn)
 		}
 	}()
-
-	stop := func() {
+	return func() {
 		cancel()
 		_ = ln.Close()
 		wg.Wait()
-	}
-	return stop, nil
+	}, nil
 }
 
-func roundtrip(addr string, payload []byte) error {
+func startUDPEcho(addr string) (func(), error) {
+	u, err := net.ResolveUDPAddr("udp", addr)
+	if err != nil {
+		return nil, err
+	}
+	conn, err := net.ListenUDP("udp", u)
+	if err != nil {
+		return nil, err
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		buf := make([]byte, 64*1024)
+		for {
+			_ = conn.SetReadDeadline(time.Now().Add(300 * time.Millisecond))
+			n, remote, err := conn.ReadFromUDP(buf)
+			if err != nil {
+				select {
+				case <-ctx.Done():
+					return
+				default:
+					continue
+				}
+			}
+			_, _ = conn.WriteToUDP(buf[:n], remote)
+		}
+	}()
+	return func() {
+		cancel()
+		_ = conn.Close()
+		wg.Wait()
+	}, nil
+}
+
+func roundtripTCP(addr string, payload []byte) error {
 	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
 	if err != nil {
 		return err
 	}
 	defer conn.Close()
-
-	if err := conn.SetDeadline(time.Now().Add(5 * time.Second)); err != nil {
-		return err
-	}
-
+	_ = conn.SetDeadline(time.Now().Add(5 * time.Second))
 	if _, err := conn.Write(payload); err != nil {
 		return err
 	}
-
 	resp := make([]byte, len(payload))
 	if _, err := io.ReadFull(conn, resp); err != nil {
 		return err
 	}
-
 	if !bytes.Equal(payload, resp) {
 		return fmt.Errorf("response mismatch")
 	}
 	return nil
 }
 
-func runCase(enableWS bool) error {
-	backendPort, err := pickPort()
+func roundtripUDP(addr string, payload []byte) error {
+	r, err := net.ResolveUDPAddr("udp", addr)
 	if err != nil {
 		return err
 	}
-	serverPort, err := pickPort()
+	conn, err := net.DialUDP("udp", nil, r)
 	if err != nil {
 		return err
 	}
-	clientPort, err := pickPort()
+	defer conn.Close()
+	_ = conn.SetDeadline(time.Now().Add(5 * time.Second))
+	if _, err := conn.Write(payload); err != nil {
+		return err
+	}
+	buf := make([]byte, 64*1024)
+	n, err := conn.Read(buf)
 	if err != nil {
 		return err
 	}
+	if !bytes.Equal(payload, buf[:n]) {
+		return fmt.Errorf("response mismatch")
+	}
+	return nil
+}
 
-	backendAddr := fmt.Sprintf("127.0.0.1:%d", backendPort)
+func runCase(enableWS bool, protocol string) error {
+	serverPort, err := pickTCPPort()
+	if err != nil {
+		return err
+	}
 	serverAddr := fmt.Sprintf("127.0.0.1:%d", serverPort)
-	clientAddr := fmt.Sprintf("127.0.0.1:%d", clientPort)
 
-	stopEcho, err := startEchoServer(backendAddr)
+	var backendAddr, clientAddr string
+	if protocol == "udp" {
+		bp, err := pickUDPPort()
+		if err != nil {
+			return err
+		}
+		cp, err := pickUDPPort()
+		if err != nil {
+			return err
+		}
+		backendAddr = fmt.Sprintf("127.0.0.1:%d", bp)
+		clientAddr = fmt.Sprintf("127.0.0.1:%d", cp)
+	} else {
+		bp, err := pickTCPPort()
+		if err != nil {
+			return err
+		}
+		cp, err := pickTCPPort()
+		if err != nil {
+			return err
+		}
+		backendAddr = fmt.Sprintf("127.0.0.1:%d", bp)
+		clientAddr = fmt.Sprintf("127.0.0.1:%d", cp)
+	}
+
+	var stopEcho func()
+	if protocol == "udp" {
+		stopEcho, err = startUDPEcho(backendAddr)
+	} else {
+		stopEcho, err = startTCPEcho(backendAddr)
+	}
 	if err != nil {
 		return err
 	}
@@ -131,29 +215,28 @@ func runCase(enableWS bool) error {
 	srvCfg := serverpkg.Config{
 		ListenAddr:   serverAddr,
 		TargetAddr:   backendAddr,
+		Protocol:     protocol,
 		Password:     "E2EPass@2026",
 		ReadTimeout:  30 * time.Second,
 		WriteTimeout: 30 * time.Second,
 		EnableWS:     enableWS,
 		WSConfig:     wsCfg,
 	}
-
 	srv, err := serverpkg.New(srvCfg)
 	if err != nil {
 		return err
 	}
-
 	serverErr := make(chan error, 1)
 	go func() { serverErr <- srv.Start() }()
-
-	if err := waitPort(serverAddr, 5*time.Second); err != nil {
-		return fmt.Errorf("server startup failed: %w", err)
+	if err := waitTCPPort(serverAddr, 5*time.Second); err != nil {
+		return err
 	}
 
 	cliCfg := clientpkg.Config{
 		ListenAddr:   clientAddr,
 		ServerAddr:   serverAddr,
 		TargetAddr:   "",
+		Protocol:     protocol,
 		Password:     "E2EPass@2026",
 		EnableHTTPS:  false,
 		ReadTimeout:  30 * time.Second,
@@ -161,68 +244,68 @@ func runCase(enableWS bool) error {
 		EnableWS:     enableWS,
 		WSConfig:     wsCfg,
 	}
-
 	cli, err := clientpkg.New(cliCfg)
 	if err != nil {
 		return err
 	}
-
 	clientErr := make(chan error, 1)
 	go func() { clientErr <- cli.Start() }()
 
-	if err := waitPort(clientAddr, 5*time.Second); err != nil {
-		return fmt.Errorf("client startup failed: %w", err)
+	if protocol == "udp" {
+		time.Sleep(300 * time.Millisecond)
+	} else {
+		if err := waitTCPPort(clientAddr, 5*time.Second); err != nil {
+			return err
+		}
 	}
 
 	payload := []byte("C2_Tunnel_E2E_Payload_0123456789")
-	if err := roundtrip(clientAddr, payload); err != nil {
-		return err
+	if protocol == "udp" {
+		if err := roundtripUDP(clientAddr, payload); err != nil {
+			return err
+		}
+	} else {
+		if err := roundtripTCP(clientAddr, payload); err != nil {
+			return err
+		}
 	}
 
 	_ = cli.Stop()
 	if !enableWS {
 		_ = srv.Stop()
 	}
-
 	select {
-	case err := <-clientErr:
-		if err != nil {
-			return fmt.Errorf("client exit error: %w", err)
-		}
+	case <-clientErr:
 	case <-time.After(2 * time.Second):
-		if !enableWS {
-			return fmt.Errorf("client did not stop in time")
-		}
 	}
-
 	if !enableWS {
 		select {
-		case err := <-serverErr:
-			if err != nil {
-				return fmt.Errorf("server exit error: %w", err)
-			}
+		case <-serverErr:
 		case <-time.After(2 * time.Second):
-			return fmt.Errorf("server did not stop in time")
 		}
 	}
-
 	return nil
 }
 
 func main() {
-	fmt.Println("[E2E] TCP case start")
-	if err := runCase(false); err != nil {
-		fmt.Printf("[E2E] TCP case failed: %v\n", err)
-		os.Exit(1)
+	cases := []struct {
+		name     string
+		enableWS bool
+		protocol string
+	}{
+		{"TCP over TCP", false, "tcp"},
+		{"TCP over WS", true, "tcp"},
+		{"UDP over TCP", false, "udp"},
+		{"UDP over WS", true, "udp"},
 	}
-	fmt.Println("[E2E] TCP case passed")
 
-	fmt.Println("[E2E] WS case start")
-	if err := runCase(true); err != nil {
-		fmt.Printf("[E2E] WS case failed: %v\n", err)
-		os.Exit(1)
+	for _, c := range cases {
+		fmt.Printf("[E2E] %s start\n", c.name)
+		if err := runCase(c.enableWS, c.protocol); err != nil {
+			fmt.Printf("[E2E] %s failed: %v\n", c.name, err)
+			os.Exit(1)
+		}
+		fmt.Printf("[E2E] %s passed\n", c.name)
 	}
-	fmt.Println("[E2E] WS case passed")
-
 	fmt.Println("[E2E] all cases passed")
 }

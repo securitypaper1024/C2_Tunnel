@@ -25,6 +25,7 @@ var bufferPool = sync.Pool{
 type Config struct {
 	ListenAddr   string
 	TargetAddr   string
+	Protocol     string
 	Password     string
 	ReadTimeout  time.Duration
 	WriteTimeout time.Duration
@@ -68,8 +69,8 @@ func (s *Server) Start() error {
 }
 
 func (s *Server) startWebSocket() error {
-	logger.Printf("[Server] WebSocket 模式启动中...")
-	logger.Printf("[Server] 目标地址: %s", s.config.TargetAddr)
+	logger.Printf("[Server] WebSocket mode start")
+	logger.Printf("[Server] target addr: %s", s.config.TargetAddr)
 
 	wsServer := transport.NewWSServer(s.config.WSConfig, s.cipher, s.handleWSConnection)
 
@@ -83,66 +84,14 @@ func (s *Server) startWebSocket() error {
 		originalHandler.ServeHTTP(w, r)
 	})
 
-	server := &http.Server{
-		Addr:    s.config.ListenAddr,
-		Handler: wrappedHandler,
-	}
-
+	httpServer := &http.Server{Addr: s.config.ListenAddr, Handler: wrappedHandler}
 	if s.config.WSConfig.EnableTLS {
-		logger.Printf("[Server] 启用 TLS，监听地址: %s%s", s.config.ListenAddr, s.config.WSConfig.Path)
-		return server.ListenAndServeTLS(s.config.WSConfig.TLSCert, s.config.WSConfig.TLSKey)
+		logger.Printf("[Server] listen with TLS: %s%s", s.config.ListenAddr, s.config.WSConfig.Path)
+		return httpServer.ListenAndServeTLS(s.config.WSConfig.TLSCert, s.config.WSConfig.TLSKey)
 	}
 
-	logger.Printf("[Server] 启动，监听地址: ws://%s%s", s.config.ListenAddr, s.config.WSConfig.Path)
-	return server.ListenAndServe()
-}
-
-func (s *Server) handleWSConnection(wsConn *transport.WSConn) {
-	defer wsConn.Close()
-	clientAddr := wsConn.RemoteAddr().String()
-	logger.Printf("[Server] 新 WebSocket 连接: %s", clientAddr)
-
-	targetData, err := wsConn.ReadEncrypted()
-	if err != nil {
-		logger.Printf("[Server] 读取目标地址失败: %v", err)
-		return
-	}
-
-	targetAddr := string(targetData)
-	if targetAddr == "USE_DEFAULT" {
-		targetAddr = s.config.TargetAddr
-	}
-
-	logger.Printf("[Server] 连接目标: %s", targetAddr)
-
-	dialer := net.Dialer{
-		Timeout:   10 * time.Second,
-		KeepAlive: 30 * time.Second,
-	}
-	targetConn, err := dialer.Dial("tcp", targetAddr)
-	if err != nil {
-		logger.Printf("[Server] 连接目标失败: %v", err)
-		wsConn.WriteEncrypted([]byte("ERROR:" + err.Error()))
-		return
-	}
-	defer targetConn.Close()
-
-	if tcpConn, ok := targetConn.(*net.TCPConn); ok {
-		tcpConn.SetNoDelay(true)
-		tcpConn.SetKeepAlive(true)
-		tcpConn.SetKeepAlivePeriod(30 * time.Second)
-	}
-
-	if err := wsConn.WriteEncrypted([]byte("OK")); err != nil {
-		logger.Printf("[Server] 发送响应失败: %v", err)
-		return
-	}
-
-	logger.Printf("[Server] WebSocket 隧道建立: %s <-> %s", clientAddr, targetAddr)
-
-	transport.BridgeWSToTCP(wsConn, targetConn)
-
-	logger.Printf("[Server] WebSocket 连接关闭: %s", clientAddr)
+	logger.Printf("[Server] listen: ws://%s%s", s.config.ListenAddr, s.config.WSConfig.Path)
+	return httpServer.ListenAndServe()
 }
 
 func (s *Server) startTCP() error {
@@ -152,8 +101,8 @@ func (s *Server) startTCP() error {
 	}
 	s.ln = ln
 
-	logger.Printf("[Server] TCP 模式启动，监听地址: %s", s.config.ListenAddr)
-	logger.Printf("[Server] 目标地址: %s", s.config.TargetAddr)
+	logger.Printf("[Server] TCP mode start, listen: %s", s.config.ListenAddr)
+	logger.Printf("[Server] target addr: %s", s.config.TargetAddr)
 
 	for {
 		conn, err := ln.Accept()
@@ -161,12 +110,12 @@ func (s *Server) startTCP() error {
 			if strings.Contains(err.Error(), "use of closed network connection") {
 				return nil
 			}
-			logger.Printf("[Server] Accept 错误: %v", err)
+			logger.Printf("[Server] accept error: %v", err)
 			continue
 		}
 
 		if !s.acl.IsAllowed(conn.RemoteAddr().String()) {
-			conn.Close()
+			_ = conn.Close()
 			continue
 		}
 
@@ -181,66 +130,226 @@ func (s *Server) Stop() error {
 	return nil
 }
 
-func (s *Server) handleTCPConnection(clientConn net.Conn) {
-	defer clientConn.Close()
-	clientAddr := clientConn.RemoteAddr().String()
-	logger.Printf("[Server] 新 TCP 连接来自: %s", clientAddr)
+func (s *Server) handleWSConnection(wsConn *transport.WSConn) {
+	defer wsConn.Close()
+	clientAddr := wsConn.RemoteAddr().String()
+	logger.Printf("[Server] new WS connection: %s", clientAddr)
 
-	cryptoConn := crypto.NewCryptoConn(clientConn, s.cipher)
-
-	targetData, err := cryptoConn.ReadEncrypted()
+	targetAddr, targetProtocol, err := s.readTargetFromWS(wsConn)
 	if err != nil {
-		logger.Printf("[Server] 读取目标地址失败: %v", err)
+		logger.Printf("[Server] read target failed: %v", err)
 		return
 	}
 
-	targetAddr := string(targetData)
-	if targetAddr == "USE_DEFAULT" {
-		targetAddr = s.config.TargetAddr
-	}
-
-	logger.Printf("[Server] 连接目标: %s", targetAddr)
-
-	dialer := net.Dialer{
-		Timeout:   10 * time.Second,
-		KeepAlive: 30 * time.Second,
-	}
-	targetConn, err := dialer.Dial("tcp", targetAddr)
+	targetConn, err := s.dialTarget(targetProtocol, targetAddr)
 	if err != nil {
-		logger.Printf("[Server] 连接目标失败: %v", err)
-		cryptoConn.WriteEncrypted([]byte("ERROR:" + err.Error()))
+		logger.Printf("[Server] dial target failed: %v", err)
+		_ = wsConn.WriteEncrypted([]byte("ERROR:" + err.Error()))
 		return
 	}
 	defer targetConn.Close()
 
-	if tcpConn, ok := targetConn.(*net.TCPConn); ok {
-		tcpConn.SetNoDelay(true)
-		tcpConn.SetKeepAlive(true)
-		tcpConn.SetKeepAlivePeriod(30 * time.Second)
-	}
-
-	if err := cryptoConn.WriteEncrypted([]byte("OK")); err != nil {
-		logger.Printf("[Server] 发送响应失败: %v", err)
+	if err := wsConn.WriteEncrypted([]byte("OK")); err != nil {
+		logger.Printf("[Server] send response failed: %v", err)
 		return
 	}
 
-	logger.Printf("[Server] TCP 隧道建立: %s <-> %s", clientAddr, targetAddr)
+	logger.Printf("[Server] WS tunnel established: %s <-> %s (%s)", clientAddr, targetAddr, targetProtocol)
+	if targetProtocol == "udp" {
+		s.bridgeWSUDP(wsConn, targetConn)
+	} else {
+		transport.BridgeWSToTCP(wsConn, targetConn)
+	}
+	logger.Printf("[Server] WS connection closed: %s", clientAddr)
+}
 
+func (s *Server) handleTCPConnection(clientConn net.Conn) {
+	defer clientConn.Close()
+	clientAddr := clientConn.RemoteAddr().String()
+	logger.Printf("[Server] new TCP connection: %s", clientAddr)
+
+	cryptoConn := crypto.NewCryptoConn(clientConn, s.cipher)
+	targetAddr, targetProtocol, err := s.readTargetFromCrypto(cryptoConn)
+	if err != nil {
+		logger.Printf("[Server] read target failed: %v", err)
+		return
+	}
+
+	targetConn, err := s.dialTarget(targetProtocol, targetAddr)
+	if err != nil {
+		logger.Printf("[Server] dial target failed: %v", err)
+		_ = cryptoConn.WriteEncrypted([]byte("ERROR:" + err.Error()))
+		return
+	}
+	defer targetConn.Close()
+
+	if err := cryptoConn.WriteEncrypted([]byte("OK")); err != nil {
+		logger.Printf("[Server] send response failed: %v", err)
+		return
+	}
+
+	logger.Printf("[Server] TCP tunnel established: %s <-> %s (%s)", clientAddr, targetAddr, targetProtocol)
+	if targetProtocol == "udp" {
+		s.bridgeCryptoUDP(cryptoConn, targetConn)
+	} else {
+		var wg sync.WaitGroup
+		wg.Add(2)
+
+		go func() {
+			defer wg.Done()
+			s.forwardFromClient(cryptoConn, targetConn)
+		}()
+
+		go func() {
+			defer wg.Done()
+			s.forwardToClient(targetConn, cryptoConn)
+		}()
+
+		wg.Wait()
+	}
+	logger.Printf("[Server] TCP connection closed: %s", clientAddr)
+}
+
+func (s *Server) readTargetFromWS(wsConn *transport.WSConn) (string, string, error) {
+	data, err := wsConn.ReadEncrypted()
+	if err != nil {
+		return "", "", err
+	}
+	targetAddr := string(data)
+	protocol := normalizeProtocol(s.config.Protocol)
+	if strings.HasPrefix(targetAddr, "UDP:") {
+		protocol = "udp"
+		targetAddr = strings.TrimPrefix(targetAddr, "UDP:")
+	}
+	if targetAddr == "USE_DEFAULT" {
+		targetAddr = s.config.TargetAddr
+	}
+	if targetAddr == "" {
+		return "", "", fmt.Errorf("empty target addr")
+	}
+	return targetAddr, protocol, nil
+}
+
+func (s *Server) readTargetFromCrypto(cryptoConn *crypto.CryptoConn) (string, string, error) {
+	data, err := cryptoConn.ReadEncrypted()
+	if err != nil {
+		return "", "", err
+	}
+	targetAddr := string(data)
+	protocol := normalizeProtocol(s.config.Protocol)
+	if strings.HasPrefix(targetAddr, "UDP:") {
+		protocol = "udp"
+		targetAddr = strings.TrimPrefix(targetAddr, "UDP:")
+	}
+	if targetAddr == "USE_DEFAULT" {
+		targetAddr = s.config.TargetAddr
+	}
+	if targetAddr == "" {
+		return "", "", fmt.Errorf("empty target addr")
+	}
+	return targetAddr, protocol, nil
+}
+
+func (s *Server) dialTarget(protocol, targetAddr string) (net.Conn, error) {
+	dialer := net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second}
+	conn, err := dialer.Dial(protocol, targetAddr)
+	if err != nil {
+		return nil, err
+	}
+	if protocol == "tcp" {
+		if tcpConn, ok := conn.(*net.TCPConn); ok {
+			tcpConn.SetNoDelay(true)
+			tcpConn.SetKeepAlive(true)
+			tcpConn.SetKeepAlivePeriod(30 * time.Second)
+		}
+	}
+	return conn, nil
+}
+
+func (s *Server) bridgeCryptoUDP(src *crypto.CryptoConn, udpConn net.Conn) {
 	var wg sync.WaitGroup
 	wg.Add(2)
+	var closeOnce sync.Once
+	closeBoth := func() {
+		closeOnce.Do(func() {
+			_ = src.Close()
+			_ = udpConn.Close()
+		})
+	}
 
 	go func() {
 		defer wg.Done()
-		s.forwardFromClient(cryptoConn, targetConn)
+		defer closeBoth()
+		for {
+			data, err := src.ReadEncrypted()
+			if err != nil {
+				return
+			}
+			if _, err := udpConn.Write(data); err != nil {
+				return
+			}
+		}
 	}()
 
 	go func() {
 		defer wg.Done()
-		s.forwardToClient(targetConn, cryptoConn)
+		defer closeBoth()
+		buf := make([]byte, 64*1024)
+		for {
+			n, err := udpConn.Read(buf)
+			if err != nil {
+				return
+			}
+			if err := src.WriteEncrypted(buf[:n]); err != nil {
+				return
+			}
+		}
 	}()
 
 	wg.Wait()
-	logger.Printf("[Server] TCP 连接关闭: %s", clientAddr)
+}
+
+func (s *Server) bridgeWSUDP(wsConn *transport.WSConn, udpConn net.Conn) {
+	var wg sync.WaitGroup
+	wg.Add(2)
+	var closeOnce sync.Once
+	closeBoth := func() {
+		closeOnce.Do(func() {
+			_ = wsConn.Close()
+			_ = udpConn.Close()
+		})
+	}
+
+	go func() {
+		defer wg.Done()
+		defer closeBoth()
+		for {
+			data, err := wsConn.ReadEncrypted()
+			if err != nil {
+				return
+			}
+			if _, err := udpConn.Write(data); err != nil {
+				return
+			}
+		}
+	}()
+
+	go func() {
+		defer wg.Done()
+		defer closeBoth()
+		buf := make([]byte, 64*1024)
+		for {
+			n, err := udpConn.Read(buf)
+			if err != nil {
+				return
+			}
+			if err := wsConn.WriteEncrypted(buf[:n]); err != nil {
+				return
+			}
+		}
+	}()
+
+	wg.Wait()
 }
 
 func (s *Server) forwardFromClient(src *crypto.CryptoConn, dst net.Conn) {
@@ -253,13 +362,13 @@ func (s *Server) forwardFromClient(src *crypto.CryptoConn, dst net.Conn) {
 		data, err := src.ReadEncrypted()
 		if err != nil {
 			if err != io.EOF {
-				logger.Printf("[Server] 读取客户端数据错误: %v", err)
+				logger.Printf("[Server] read client data error: %v", err)
 			}
 			return
 		}
 
 		if _, err := dst.Write(data); err != nil {
-			logger.Printf("[Server] 写入目标数据错误: %v", err)
+			logger.Printf("[Server] write target data error: %v", err)
 			return
 		}
 	}
@@ -278,13 +387,13 @@ func (s *Server) forwardToClient(src net.Conn, dst *crypto.CryptoConn) {
 		n, err := src.Read(buf)
 		if err != nil {
 			if err != io.EOF {
-				logger.Printf("[Server] 读取目标数据错误: %v", err)
+				logger.Printf("[Server] read target data error: %v", err)
 			}
 			return
 		}
 
 		if err := dst.WriteEncrypted(buf[:n]); err != nil {
-			logger.Printf("[Server] 写入客户端数据错误: %v", err)
+			logger.Printf("[Server] write client data error: %v", err)
 			return
 		}
 	}
@@ -300,4 +409,12 @@ func getClientIP(r *http.Request) string {
 		return r.RemoteAddr
 	}
 	return host
+}
+
+func normalizeProtocol(v string) string {
+	p := strings.ToLower(strings.TrimSpace(v))
+	if p == "" {
+		return "tcp"
+	}
+	return p
 }
